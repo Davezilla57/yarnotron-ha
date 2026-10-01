@@ -1,0 +1,64 @@
+blueprint:
+  name: Yarnotron safety alert
+  description: >-
+    Run actions when Yarnotron flags or blocks something a child said, or ends
+    a session. The alert details are available as variables in the actions.
+    What the child actually said is NOT included unless you turned on
+    "Include what the child said in alerts" in the integration's options.
+  domain: automation
+  source_url: https://github.com/Davezilla57/Yarnotron-HA/blob/main/blueprints/automation/yarnotron/safety_alert_notify.yaml
+  input:
+    alert_entity:
+      name: Safety alert entity
+      selector:
+        entity:
+          filter:
+            - integration: yarnotron
+              domain: event
+    alert_types:
+      name: Alert on
+      description: Which kinds of alert should run the actions.
+      default: [blocked, session_ended]
+      selector:
+        select:
+          multiple: true
+          options:
+            - {value: caution, label: "Caution (redirected, story continued)"}
+            - {value: blocked, label: "Blocked (turn stopped)"}
+            - {value: session_ended, label: "Session ended (strike limit)"}
+    notify_action:
+      name: Notify
+      description: >-
+        Actions to run, for example a notify.mobile_app_* call. Available
+        variables are alert_type, event_id, categories, parent_note and
+        severity.
+      default: []
+      selector:
+        action: {}
+
+mode: queued
+max_exceeded: silent
+
+triggers:
+  - trigger: state
+    entity_id: !input alert_entity
+
+variables:
+  alert_types: !input alert_types
+  alert_type: "{{ trigger.to_state.attributes.event_type }}"
+  event_id: "{{ trigger.to_state.attributes.event_id }}"
+  categories: "{{ trigger.to_state.attributes.categories | default([]) }}"
+  parent_note: "{{ trigger.to_state.attributes.parent_note | default('') }}"
+  severity: "{{ trigger.to_state.attributes.severity | default('') }}"
+
+conditions:
+  # The first state is "unknown" before any alert; only real alerts count.
+  - condition: template
+    value_template: >-
+      {{ trigger.from_state is not none
+         and trigger.to_state.state not in ['unknown', 'unavailable']
+         and alert_type in alert_types }}
+
+actions:
+  - choose: []
+    default: !input notify_action
