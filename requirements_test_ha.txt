@@ -1,0 +1,2 @@
+# Tests for custom_components/yarnotron. Pin to the Home Assistant release you target.
+pytest-homeassistant-custom-component
