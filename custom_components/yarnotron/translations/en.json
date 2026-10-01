@@ -1,0 +1,233 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Yarnotron",
+        "description": "Enter the address of the Yarnotron backend (for example http://192.168.1.20:8989) and its API token.",
+        "data": {
+          "url": "Backend URL",
+          "api_token": "API token",
+          "child_id": "Child ID"
+        },
+        "data_description": {
+          "url": "Where the Yarnotron backend runs, reachable from Home Assistant.",
+          "api_token": "The YARNOTRON_API_TOKEN set on the backend. Leave blank only if the backend has none.",
+          "child_id": "Name for this child's stories and safety history. Keep the default for one child."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Yarnotron token rejected",
+        "description": "Enter the backend's current API token.",
+        "data": {
+          "api_token": "API token"
+        }
+      },
+      "reconfigure": {
+        "title": "Change backend address",
+        "data": {
+          "url": "Backend URL",
+          "api_token": "API token"
+        }
+      }
+    },
+    "error": {
+      "invalid_url": "That is not a valid http(s) address.",
+      "cannot_connect": "Could not reach the backend. Check the address, port and firewall.",
+      "invalid_auth": "The backend rejected the API token.",
+      "unsupported_backend": "This backend is too old: it has no /v1/status endpoint. Use the Yarnotron-HA backend.",
+      "unknown": "Unexpected error. See the Home Assistant log."
+    },
+    "abort": {
+      "already_configured": "This backend and child are already set up.",
+      "reauth_successful": "Token updated.",
+      "reconfigure_successful": "Backend updated.",
+      "wrong_child": "The address now serves a different child than this entry."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Yarnotron options",
+        "data": {
+          "scan_interval": "Status refresh interval",
+          "idle_minutes": "Start a fresh session after being idle for",
+          "keep_listening": "Keep listening after each reply",
+          "include_transcripts": "Include what the child said in alerts"
+        },
+        "data_description": {
+          "scan_interval": "How often Home Assistant checks the backend for safety events.",
+          "idle_minutes": "Minutes of silence before the next chat begins a new session.",
+          "keep_listening": "Lets the child reply without saying the wake word again.",
+          "include_transcripts": "Off by default. When on, alert attributes carry an excerpt and are stored in Home Assistant's database."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "unreviewed_safety_events": {
+        "name": "Unreviewed safety events"
+      },
+      "session_strikes": {
+        "name": "Session strikes"
+      },
+      "last_safety_event": {
+        "name": "Last safety event"
+      },
+      "pending_images": {
+        "name": "Images awaiting approval"
+      },
+      "stories": {
+        "name": "Stories"
+      }
+    },
+    "binary_sensor": {
+      "model_server": {
+        "name": "Model server"
+      },
+      "session_locked": {
+        "name": "Session locked"
+      }
+    },
+    "switch": {
+      "storytime": {
+        "name": "Storytime"
+      }
+    },
+    "button": {
+      "start_new_session": {
+        "name": "Start new session"
+      },
+      "end_session": {
+        "name": "End session"
+      }
+    },
+    "event": {
+      "safety_alert": {
+        "name": "Safety alert",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "caution": "Caution",
+              "blocked": "Blocked",
+              "session_ended": "Session ended"
+            }
+          }
+        }
+      }
+    }
+  },
+  "services": {
+    "review_safety_event": {
+      "name": "Review safety event",
+      "description": "Mark a safety event as reviewed by a parent.",
+      "fields": {
+        "event_id": {
+          "name": "Event ID",
+          "description": "The event's id, from the safety alert."
+        },
+        "note": {
+          "name": "Note",
+          "description": "Optional note kept with the review."
+        },
+        "config_entry_id": {
+          "name": "Yarnotron entry",
+          "description": "Which Yarnotron entry (child) to act on. Optional when only one is set up."
+        }
+      }
+    },
+    "release_safety_event": {
+      "name": "Release blocked turn",
+      "description": "Release a turn the safety review stopped, so the story continues. Only a blocked turn can be released.",
+      "fields": {
+        "event_id": {
+          "name": "Event ID",
+          "description": "The blocked event's id."
+        },
+        "note": {
+          "name": "Note",
+          "description": "Optional note."
+        },
+        "config_entry_id": {
+          "name": "Yarnotron entry",
+          "description": "Which Yarnotron entry (child) to act on. Optional when only one is set up."
+        }
+      }
+    },
+    "start_new_session": {
+      "name": "Start new session",
+      "description": "Begin a fresh session and clear the lock set when a session ended. This is how a parent lets storytime resume.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Yarnotron entry",
+          "description": "Which Yarnotron entry (child) to act on. Optional when only one is set up."
+        }
+      }
+    },
+    "end_session": {
+      "name": "End session",
+      "description": "End the current session. The child can start another by talking again, unless the session ended because of safety strikes.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Yarnotron entry",
+          "description": "Which Yarnotron entry (child) to act on. Optional when only one is set up."
+        }
+      }
+    },
+    "set_story": {
+      "name": "Choose story",
+      "description": "Pin the story the next session continues. Leave empty to let Yarnotron choose.",
+      "fields": {
+        "story_id": {
+          "name": "Story ID",
+          "description": "A story id from List stories."
+        },
+        "config_entry_id": {
+          "name": "Yarnotron entry",
+          "description": "Which Yarnotron entry (child) to act on. Optional when only one is set up."
+        }
+      }
+    },
+    "list_stories": {
+      "name": "List stories",
+      "description": "Return the stories the backend holds.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Yarnotron entry",
+          "description": "Which Yarnotron entry (child) to act on. Optional when only one is set up."
+        }
+      }
+    },
+    "export_story": {
+      "name": "Export story",
+      "description": "Return a story as Markdown.",
+      "fields": {
+        "story_id": {
+          "name": "Story ID",
+          "description": "The story to export."
+        },
+        "config_entry_id": {
+          "name": "Yarnotron entry",
+          "description": "Which Yarnotron entry (child) to act on. Optional when only one is set up."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "entry_not_found": {
+      "message": "No loaded Yarnotron entry with id {entry}."
+    },
+    "entry_ambiguous": {
+      "message": "More than one Yarnotron entry is set up; choose one."
+    },
+    "entry_not_loaded": {
+      "message": "No Yarnotron entry is loaded."
+    },
+    "not_found": {
+      "message": "Yarnotron could not find that item: {error}"
+    },
+    "request_failed": {
+      "message": "Yarnotron request failed: {error}"
+    }
+  }
+}

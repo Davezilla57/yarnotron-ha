@@ -1,0 +1,73 @@
+{
+  "entity": {
+    "sensor": {
+      "unreviewed_safety_events": {
+        "default": "mdi:shield-alert-outline"
+      },
+      "session_strikes": {
+        "default": "mdi:alert-circle-outline"
+      },
+      "last_safety_event": {
+        "default": "mdi:shield-search"
+      },
+      "pending_images": {
+        "default": "mdi:image-clock-outline"
+      },
+      "stories": {
+        "default": "mdi:book-open-page-variant-outline"
+      }
+    },
+    "binary_sensor": {
+      "model_server": {
+        "default": "mdi:server-network"
+      },
+      "session_locked": {
+        "default": "mdi:lock-open-variant-outline",
+        "state": {
+          "on": "mdi:lock-alert"
+        }
+      }
+    },
+    "switch": {
+      "storytime": {
+        "default": "mdi:book-open-variant"
+      }
+    },
+    "button": {
+      "start_new_session": {
+        "default": "mdi:play-circle-outline"
+      },
+      "end_session": {
+        "default": "mdi:stop-circle-outline"
+      }
+    },
+    "event": {
+      "safety_alert": {
+        "default": "mdi:shield-alert"
+      }
+    }
+  },
+  "services": {
+    "review_safety_event": {
+      "service": "mdi:check-circle-outline"
+    },
+    "release_safety_event": {
+      "service": "mdi:lock-open-check-outline"
+    },
+    "start_new_session": {
+      "service": "mdi:play-circle-outline"
+    },
+    "end_session": {
+      "service": "mdi:stop-circle-outline"
+    },
+    "set_story": {
+      "service": "mdi:pin-outline"
+    },
+    "list_stories": {
+      "service": "mdi:format-list-bulleted"
+    },
+    "export_story": {
+      "service": "mdi:file-export-outline"
+    }
+  }
+}

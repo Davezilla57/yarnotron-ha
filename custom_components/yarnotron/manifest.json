@@ -1,0 +1,14 @@
+{
+  "domain": "yarnotron",
+  "name": "Yarnotron",
+  "codeowners": ["@Davezilla57"],
+  "config_flow": true,
+  "dependencies": ["conversation"],
+  "documentation": "https://github.com/Davezilla57/Yarnotron-HA",
+  "integration_type": "service",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/Davezilla57/Yarnotron-HA/issues",
+  "loggers": ["custom_components.yarnotron"],
+  "requirements": [],
+  "version": "0.1.0"
+}

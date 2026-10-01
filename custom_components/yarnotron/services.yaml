@@ -1,0 +1,27 @@
+review_safety_event:
+  fields:
+    event_id: {required: true, example: "evt_123", selector: {text: {}}}
+    note: {selector: {text: {multiline: true}}}
+    config_entry_id: {selector: {config_entry: {integration: yarnotron}}}
+release_safety_event:
+  fields:
+    event_id: {required: true, example: "evt_123", selector: {text: {}}}
+    note: {selector: {text: {multiline: true}}}
+    config_entry_id: {selector: {config_entry: {integration: yarnotron}}}
+start_new_session:
+  fields:
+    config_entry_id: {selector: {config_entry: {integration: yarnotron}}}
+end_session:
+  fields:
+    config_entry_id: {selector: {config_entry: {integration: yarnotron}}}
+set_story:
+  fields:
+    story_id: {example: "story_abc", selector: {text: {}}}
+    config_entry_id: {selector: {config_entry: {integration: yarnotron}}}
+list_stories:
+  fields:
+    config_entry_id: {selector: {config_entry: {integration: yarnotron}}}
+export_story:
+  fields:
+    story_id: {required: true, example: "story_abc", selector: {text: {}}}
+    config_entry_id: {selector: {config_entry: {integration: yarnotron}}}
