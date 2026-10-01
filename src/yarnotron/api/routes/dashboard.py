@@ -169,8 +169,29 @@ async def dashboard() -> str:
     </section>
   </main>
   <script>
-    const json = async (url, options) => {
-      const response = await fetch(url, options);
+    // When the server sets YARNOTRON_API_TOKEN every /v1 call needs it. Ask once
+    // and keep it for this tab only (sessionStorage), never in a cookie or URL.
+    const TOKEN_KEY = "yarnotron_api_token";
+    const readToken = () => {
+      try { return sessionStorage.getItem(TOKEN_KEY) || ""; } catch { return ""; }
+    };
+    const json = async (url, options = {}) => {
+      const send = () => {
+        const headers = new Headers(options.headers || {});
+        const token = readToken();
+        if (token) {
+          headers.set("Authorization", `Bearer ${token}`);
+        }
+        return fetch(url, {...options, headers});
+      };
+      let response = await send();
+      if (response.status === 401) {
+        const entered = window.prompt("This Yarnotron server needs its API token:");
+        if (entered) {
+          try { sessionStorage.setItem(TOKEN_KEY, entered.trim()); } catch {}
+          response = await send();
+        }
+      }
       if (!response.ok) {
         const body = await response.text();
         throw new Error(`${response.status} ${body || response.statusText}`);

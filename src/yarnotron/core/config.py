@@ -3,7 +3,7 @@ import sys
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -60,6 +60,18 @@ class Settings(BaseSettings):
     database_url: str = str(application_support_dir() / "yarnotron.db")
     media_output_dir: str = str(application_support_dir() / "generated_media")
     preferences_path: str = str(application_support_dir() / "preferences.json")
+    # When set, every /v1 route requires `Authorization: Bearer <token>`.
+    # Unset (or blank) keeps the old trust-the-network behaviour, which is right
+    # for a laptop and wrong for anything reachable from a home LAN.
+    api_token: str | None = None
+
+    @field_validator("api_token")
+    @classmethod
+    def _blank_token_means_none(cls, value: str | None) -> str | None:
+        # `YARNOTRON_API_TOKEN=` in a .env file must not lock everyone out.
+        if value is None:
+            return None
+        return value.strip() or None
 
     model_config = SettingsConfigDict(
         env_prefix="YARNOTRON_",

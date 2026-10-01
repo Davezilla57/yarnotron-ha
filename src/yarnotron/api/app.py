@@ -1,9 +1,10 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from yarnotron.api.auth import require_api_token
 from yarnotron.api.routes import (
     agent,
     conversation_turns,
@@ -45,16 +46,21 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # /health stays open so a client can tell "unreachable" from "wrong token",
+    # and the dashboard page holds no data -- its API calls are what is guarded.
+    # /media serves generated images by unguessable id and cannot carry a header
+    # from an <img> tag; it is the one data path left open, by design.
+    protected = [Depends(require_api_token)]
     app.include_router(health.router)
     app.include_router(dashboard.router)
-    app.include_router(models.router, prefix="/v1")
-    app.include_router(stories.router, prefix="/v1")
-    app.include_router(agent.router, prefix="/v1")
-    app.include_router(conversation_turns.router, prefix="/v1")
-    app.include_router(media.router, prefix="/v1")
-    app.include_router(memory.router, prefix="/v1")
-    app.include_router(preferences.router, prefix="/v1")
-    app.include_router(sessions.router, prefix="/v1")
-    app.include_router(safety.router, prefix="/v1")
+    app.include_router(models.router, prefix="/v1", dependencies=protected)
+    app.include_router(stories.router, prefix="/v1", dependencies=protected)
+    app.include_router(agent.router, prefix="/v1", dependencies=protected)
+    app.include_router(conversation_turns.router, prefix="/v1", dependencies=protected)
+    app.include_router(media.router, prefix="/v1", dependencies=protected)
+    app.include_router(memory.router, prefix="/v1", dependencies=protected)
+    app.include_router(preferences.router, prefix="/v1", dependencies=protected)
+    app.include_router(sessions.router, prefix="/v1", dependencies=protected)
+    app.include_router(safety.router, prefix="/v1", dependencies=protected)
     app.mount("/media", StaticFiles(directory=media_output_dir), name="media")
     return app
