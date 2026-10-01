@@ -2,6 +2,22 @@
 
 Local-first backend for a child-safe AI storytelling companion.
 
+## Home Assistant
+
+This fork (Yarnotron-HA) adds a Home Assistant integration: Assist's wake word,
+speech-to-text and text-to-speech are the ears and voice, and Yarnotron stays
+the story brain with its safety review, strike lock and parent controls.
+
+- `custom_components/yarnotron/` - the integration (copy it, or add the repo to HACS)
+- `blueprints/automation/yarnotron/` - push a notification on a safety alert
+- `Dockerfile`, `docker-compose.yml` - run the backend headless on the AI machine
+- `docs/yarnotron-ha-guide.html` - architecture, code changes, setup and user guide
+- `ha_tests/` - integration tests (`pip install -r requirements_test_ha.txt`, then `pytest ha_tests`)
+
+Set `YARNOTRON_API_TOKEN` on the backend whenever it is reachable from the
+network. The Home Assistant side is tested against Home Assistant 2026.2 only,
+not against a physical voice satellite.
+
 ## Quick Start
 
 ```sh
