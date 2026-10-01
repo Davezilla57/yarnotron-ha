@@ -1,4 +1,5 @@
 import os
+import sys
 from functools import lru_cache
 from pathlib import Path
 
@@ -11,7 +12,11 @@ def application_support_dir() -> Path:
 
     An installed app cannot write into the repository it was built from, and a
     child's stories should survive deleting the checkout. Honours
-    XDG_DATA_HOME, then the platform convention.
+    YARNOTRON_DATA_DIR, then XDG_DATA_HOME, then the platform convention.
+
+    macOS keeps ~/Library/Application Support so existing installs do not move.
+    Linux (including containers) uses the XDG default; it used to fall through
+    to a ~/Library path that does not exist there.
     """
     override = os.environ.get("YARNOTRON_DATA_DIR")
     if override:
@@ -19,7 +24,13 @@ def application_support_dir() -> Path:
     xdg = os.environ.get("XDG_DATA_HOME")
     if xdg:
         return Path(xdg).expanduser() / "Yarnotron"
-    return Path.home() / "Library" / "Application Support" / "Yarnotron"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "Yarnotron"
+    if sys.platform == "win32":
+        appdata = os.environ.get("APPDATA")
+        base = Path(appdata) if appdata else Path.home() / "AppData" / "Roaming"
+        return base / "Yarnotron"
+    return Path.home() / ".local" / "share" / "Yarnotron"
 
 
 class Settings(BaseSettings):

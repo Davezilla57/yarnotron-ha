@@ -8,8 +8,10 @@ import time
 import tempfile
 import wave
 
-import numpy as np
-import sounddevice as sd
+# numpy and sounddevice are imported where they are used, not here. This module
+# is reached from the API (voice picker, voice samples), and the API has to run
+# on a headless host -- a container, a NAS, a server behind Home Assistant --
+# where there is no PortAudio and the `voice` extra is not installed.
 
 if TYPE_CHECKING:
     from yarnotron.voice.bargein import BargeInDetector, BargeInSettings
@@ -161,6 +163,8 @@ class KokoroSpeaker:
         """
         if not text.strip():
             return False
+        import sounddevice as sd
+
         samples, sample_rate = self._kokoro.create(
             text, voice=self.voice, speed=self.speed, lang="en-us"
         )
@@ -315,6 +319,9 @@ def list_macos_voices() -> str:
 
 
 def _play_wav(path: Path, output_device: int | str | None = None) -> None:
+    import numpy as np
+    import sounddevice as sd
+
     with wave.open(str(path), "rb") as wav:
         channels = wav.getnchannels()
         sample_rate = wav.getframerate()
