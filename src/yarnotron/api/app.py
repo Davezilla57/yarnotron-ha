@@ -16,6 +16,7 @@ from yarnotron.api.routes import (
     preferences,
     safety,
     sessions,
+    status,
     stories,
 )
 from yarnotron.core.config import get_settings
@@ -62,5 +63,6 @@ def create_app() -> FastAPI:
     app.include_router(preferences.router, prefix="/v1", dependencies=protected)
     app.include_router(sessions.router, prefix="/v1", dependencies=protected)
     app.include_router(safety.router, prefix="/v1", dependencies=protected)
+    app.include_router(status.router, prefix="/v1", dependencies=protected)
     app.mount("/media", StaticFiles(directory=media_output_dir), name="media")
     return app

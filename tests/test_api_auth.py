@@ -90,6 +90,7 @@ def test_every_v1_route_family_is_protected(monkeypatch, tmp_path):
         ("GET", "/v1/media"),
         ("GET", "/v1/preferences"),
         ("GET", "/v1/models/ollama"),
+        ("GET", "/v1/status"),
         ("POST", "/v1/memory/search"),
         ("POST", "/v1/agent/turn"),
         ("POST", "/v1/agent/turn/stream"),

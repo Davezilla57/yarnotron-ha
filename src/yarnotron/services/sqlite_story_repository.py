@@ -46,6 +46,7 @@ from yarnotron.models.operations import (
     StoryVersion,
 )
 from yarnotron.models.safety import SafetyDecision
+from yarnotron.models.status import RepositorySummary
 from yarnotron.models.story import CreateStoryRequest, Story, StoryPatch
 from yarnotron.services.story_store import StoryPatchApplier, story_id_from_title
 
@@ -514,6 +515,44 @@ class SqliteStoryRepository:
             )
         return [SafetyEvent.model_validate_json(row[0]) for row in rows]
 
+    async def status_summary(self, child_id: str) -> RepositorySummary:
+        """Counts for a polling client, computed in SQL rather than by listing.
+
+        Documents are JSON text, so the per-child filters use json_extract.
+        """
+        async with self._connect() as conn:
+            stories = await _scalar(conn, "SELECT COUNT(*) FROM stories")
+            open_sessions = await _scalar(
+                conn,
+                "SELECT COUNT(*) FROM story_sessions WHERE child_id = ? "
+                "AND json_extract(document, '$.ended_at') IS NULL",
+                (child_id,),
+            )
+            unreviewed = await _scalar(
+                conn,
+                "SELECT COUNT(*) FROM safety_events "
+                "WHERE json_extract(document, '$.child_id') = ? "
+                "AND json_extract(document, '$.reviewed_at') IS NULL",
+                (child_id,),
+            )
+            pending_media = await _scalar(
+                conn,
+                "SELECT COUNT(*) FROM media_assets "
+                "WHERE json_extract(document, '$.child_id') = ? "
+                "AND json_extract(document, '$.status') = ?",
+                (child_id, MediaAssetStatus.PENDING_PARENT_REVIEW.value),
+            )
+        latest = await self.latest_session_for_child(child_id)
+        return RepositorySummary(
+            stories=stories,
+            open_sessions=open_sessions,
+            unreviewed_safety_events=unreviewed,
+            pending_media=pending_media,
+            latest_session_id=latest.id if latest else None,
+            latest_session_ended=bool(latest and latest.ended_at is not None),
+            latest_session_strikes=latest.safety_summary.get(STRIKE_KEY, 0) if latest else 0,
+        )
+
     async def get_safety_event(self, event_id: str) -> SafetyEvent | None:
         async with self._connect() as conn:
             row = await _fetchone(
@@ -770,6 +809,11 @@ class _VecConnection:
 async def _fetchone(conn: aiosqlite.Connection, sql: str, params: tuple) -> tuple | None:
     cursor = await conn.execute(sql, params)
     return await cursor.fetchone()
+
+
+async def _scalar(conn: aiosqlite.Connection, sql: str, params: tuple = ()) -> int:
+    row = await _fetchone(conn, sql, params)
+    return int(row[0]) if row else 0
 
 
 async def _session(conn: aiosqlite.Connection, session_id: str) -> StorySession:

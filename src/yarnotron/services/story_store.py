@@ -30,6 +30,7 @@ from yarnotron.models.operations import (
     StoryVersion,
 )
 from yarnotron.models.safety import SafetyDecision
+from yarnotron.models.status import RepositorySummary
 from yarnotron.models.story import (
     Character,
     CreateStoryRequest,
@@ -93,6 +94,8 @@ class StoryRepository(Protocol):
     ) -> SafetyEvent: ...
 
     async def get_safety_event(self, event_id: str) -> SafetyEvent | None: ...
+
+    async def status_summary(self, child_id: str) -> RepositorySummary: ...
 
     async def release_safety_event(
         self,
