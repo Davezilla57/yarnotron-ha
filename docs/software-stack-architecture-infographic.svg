@@ -1,0 +1,148 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900" role="img" aria-labelledby="title desc">
+  <title id="title">Yarnotron Software Stack and Architecture</title>
+  <desc id="desc">Infographic showing user surfaces, FastAPI backend, agent services, data stores, Ollama models, media generation, and parent safety review flow.</desc>
+  <defs>
+    <style>
+      .bg { fill: #f7f7f4; }
+      .title { font: 700 42px Inter, Arial, sans-serif; fill: #1f2d2b; }
+      .subtitle { font: 400 20px Inter, Arial, sans-serif; fill: #5d6963; }
+      .section { font: 700 18px Inter, Arial, sans-serif; fill: #263633; letter-spacing: 0; }
+      .label { font: 700 17px Inter, Arial, sans-serif; fill: #1f2d2b; }
+      .small { font: 400 14px Inter, Arial, sans-serif; fill: #4d5a55; }
+      .tiny { font: 400 12px Inter, Arial, sans-serif; fill: #5d6963; }
+      .box { fill: #ffffff; stroke: #d8dcd4; stroke-width: 2; rx: 8; }
+      .surface { fill: #e7f0ed; stroke: #a9c4bb; stroke-width: 2; rx: 8; }
+      .core { fill: #eef2fb; stroke: #aebde2; stroke-width: 2; rx: 8; }
+      .service { fill: #fff7e7; stroke: #e3c27c; stroke-width: 2; rx: 8; }
+      .safety { fill: #f9e8e3; stroke: #deaaa0; stroke-width: 2; rx: 8; }
+      .data { fill: #edf4ea; stroke: #abc99f; stroke-width: 2; rx: 8; }
+      .model { fill: #f0eaf8; stroke: #c0a6dc; stroke-width: 2; rx: 8; }
+      .media { fill: #e8f4f7; stroke: #9fc7d0; stroke-width: 2; rx: 8; }
+      .pill { fill: #24312f; rx: 14; }
+      .pillText { font: 700 12px Inter, Arial, sans-serif; fill: #ffffff; }
+      .arrow { stroke: #65746d; stroke-width: 3; fill: none; marker-end: url(#arrowhead); }
+      .softArrow { stroke: #9aa59f; stroke-width: 2.4; fill: none; marker-end: url(#arrowheadSoft); stroke-dasharray: 7 7; }
+      .divider { stroke: #d8dcd4; stroke-width: 2; }
+    </style>
+    <marker id="arrowhead" markerWidth="12" markerHeight="8" refX="11" refY="4" orient="auto">
+      <path d="M0,0 L12,4 L0,8 Z" fill="#65746d" />
+    </marker>
+    <marker id="arrowheadSoft" markerWidth="12" markerHeight="8" refX="11" refY="4" orient="auto">
+      <path d="M0,0 L12,4 L0,8 Z" fill="#9aa59f" />
+    </marker>
+  </defs>
+
+  <rect class="bg" width="1400" height="900" />
+  <text class="title" x="70" y="78">Yarnotron Software Stack</text>
+  <text class="subtitle" x="70" y="112">Local-first storytelling backend with parent review, structured memory, voice I/O, and Ollama-powered AI services.</text>
+
+  <line class="divider" x1="70" y1="144" x2="1330" y2="144" />
+
+  <text class="section" x="90" y="184">User Surfaces</text>
+  <rect class="surface" x="70" y="205" width="260" height="120" />
+  <text class="label" x="95" y="242">Local Voice CLI</text>
+  <text class="small" x="95" y="270">scripts/local_voice_loop.py</text>
+  <text class="tiny" x="95" y="296">Microphone -> STT -> reply TTS</text>
+
+  <rect class="surface" x="70" y="350" width="260" height="120" />
+  <text class="label" x="95" y="387">Parent Dashboard</text>
+  <text class="small" x="95" y="415">/dashboard</text>
+  <text class="tiny" x="95" y="441">Stories, sessions, media, safety</text>
+
+  <rect class="surface" x="70" y="495" width="260" height="120" />
+  <text class="label" x="95" y="532">HTTP API Clients</text>
+  <text class="small" x="95" y="560">curl, tools, future devices</text>
+  <text class="tiny" x="95" y="586">/v1/stories and /v1/agent/turn</text>
+
+  <text class="section" x="405" y="184">FastAPI Backend</text>
+  <rect class="core" x="385" y="205" width="295" height="410" />
+  <text class="label" x="415" y="244">yarnotron.main:app</text>
+  <text class="small" x="415" y="274">Routers</text>
+  <rect class="box" x="415" y="296" width="235" height="38" />
+  <text class="tiny" x="435" y="320">health, models, stories</text>
+  <rect class="box" x="415" y="344" width="235" height="38" />
+  <text class="tiny" x="435" y="368">agent, memory, sessions</text>
+  <rect class="box" x="415" y="392" width="235" height="38" />
+  <text class="tiny" x="435" y="416">media, safety, dashboard</text>
+  <text class="small" x="415" y="472">Startup</text>
+  <rect class="box" x="415" y="494" width="235" height="58" />
+  <text class="tiny" x="435" y="518">initialize_story_schema()</text>
+  <text class="tiny" x="435" y="538">mount /media static files</text>
+  <rect class="pill" x="415" y="570" width="110" height="28" />
+  <text class="pillText" x="436" y="589">Python 3.11</text>
+  <rect class="pill" x="538" y="570" width="72" height="28" />
+  <text class="pillText" x="557" y="589">uv</text>
+
+  <text class="section" x="755" y="184">Agent and Services</text>
+  <rect class="service" x="730" y="205" width="290" height="120" />
+  <text class="label" x="755" y="242">Turn Processor</text>
+  <text class="small" x="755" y="270">Routes child transcript</text>
+  <text class="tiny" x="755" y="296">Intent, reply, story patches</text>
+
+  <rect class="safety" x="730" y="350" width="290" height="120" />
+  <text class="label" x="755" y="387">Safety Reviewer</text>
+  <text class="small" x="755" y="415">Pre and post response checks</text>
+  <text class="tiny" x="755" y="441">Logs events; blocks unsafe media</text>
+
+  <rect class="service" x="730" y="495" width="290" height="120" />
+  <text class="label" x="755" y="532">Story Repository</text>
+  <text class="small" x="755" y="560">Patches and versions</text>
+  <text class="tiny" x="755" y="586">Stories, memory, sessions</text>
+
+  <text class="section" x="1090" y="184">Local Runtime</text>
+  <rect class="model" x="1065" y="205" width="265" height="120" />
+  <text class="label" x="1090" y="242">Ollama</text>
+  <text class="small" x="1090" y="270">Chat, safety, embeddings</text>
+  <text class="tiny" x="1090" y="296">Default local URL :11434</text>
+
+  <rect class="data" x="1065" y="350" width="265" height="120" />
+  <text class="label" x="1090" y="387">SQLite + sqlite-vec</text>
+  <text class="small" x="1090" y="415">docker compose service</text>
+  <text class="tiny" x="1090" y="441">Relational state and memory search</text>
+
+  <rect class="media" x="1065" y="495" width="265" height="120" />
+  <text class="label" x="1090" y="532">Generated Media</text>
+  <text class="small" x="1090" y="560">Local SVG placeholder</text>
+  <text class="tiny" x="1090" y="586">generated_media/ served at /media</text>
+
+  <path class="arrow" d="M330 265 C350 265 360 265 385 265" />
+  <path class="arrow" d="M330 410 C350 410 360 410 385 410" />
+  <path class="arrow" d="M330 555 C350 555 360 555 385 555" />
+
+  <path class="arrow" d="M680 330 C705 330 705 265 730 265" />
+  <path class="arrow" d="M875 325 L875 350" />
+  <path class="arrow" d="M875 470 L875 495" />
+
+  <path class="arrow" d="M1020 265 C1040 265 1045 265 1065 265" />
+  <path class="arrow" d="M1020 555 C1040 555 1045 410 1065 410" />
+  <path class="arrow" d="M1020 410 C1040 410 1045 555 1065 555" />
+
+  <path class="softArrow" d="M1198 325 L1198 350" />
+  <path class="softArrow" d="M1198 470 L1198 495" />
+  <path class="softArrow" d="M1065 555 C985 655 800 680 570 640 C380 608 215 620 200 615" />
+
+  <rect class="box" x="70" y="690" width="1260" height="125" />
+  <text class="section" x="100" y="730">Primary Request Flow</text>
+  <text class="small" x="100" y="762">1. Child speech or an API request sends a transcript.</text>
+  <text class="small" x="500" y="762">2. FastAPI calls the turn processor.</text>
+  <text class="small" x="830" y="762">3. Safety checks and Ollama draft the reply.</text>
+  <text class="small" x="100" y="792">4. Validated story patches update the SQLite file and memory chunks are embedded for search.</text>
+  <text class="small" x="720" y="792">5. Media requests wait for parent approval before local generation.</text>
+
+  <rect class="pill" x="70" y="842" width="142" height="30" />
+  <text class="pillText" x="91" y="862">FastAPI</text>
+  <rect class="pill" x="224" y="842" width="134" height="30" />
+  <text class="pillText" x="247" y="862">Pydantic</text>
+  <rect class="pill" x="370" y="842" width="122" height="30" />
+  <text class="pillText" x="396" y="862">httpx</text>
+  <rect class="pill" x="504" y="842" width="124" height="30" />
+  <text class="pillText" x="526" y="862">psycopg</text>
+  <rect class="pill" x="640" y="842" width="126" height="30" />
+  <text class="pillText" x="665" y="862">Docker</text>
+  <rect class="pill" x="778" y="842" width="118" height="30" />
+  <text class="pillText" x="805" y="862">Ollama</text>
+  <rect class="pill" x="908" y="842" width="178" height="30" />
+  <text class="pillText" x="932" y="862">faster-whisper</text>
+  <rect class="pill" x="1098" y="842" width="112" height="30" />
+  <text class="pillText" x="1129" y="862">TTS</text>
+</svg>

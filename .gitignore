@@ -1,0 +1,12 @@
+.env
+.DS_Store
+.venv/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+.yarnotron/
+bench/audio/
+*.log
+probe_*.py
+generated_media/
+bench/voice_samples/

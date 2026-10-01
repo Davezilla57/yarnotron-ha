@@ -1,0 +1,54 @@
+[project]
+name = "yarnotron"
+version = "0.1.0"
+description = "Local-first child-safe storytelling voice agent backend."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.0",
+    "httpx>=0.27.0",
+    "aiosqlite>=0.20.0",
+    "sqlite-vec>=0.1.9",
+    "pydantic>=2.8.0",
+    "pydantic-settings>=2.4.0",
+    "uvicorn[standard]>=0.30.0",
+]
+
+[project.optional-dependencies]
+# Only needed by scripts/migrate_postgres_to_sqlite.py, for anyone still
+# carrying stories in the old database. Nothing in the app imports psycopg.
+postgres = [
+    "psycopg[binary,pool]>=3.2.0",
+]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "ruff>=0.6.0",
+]
+voice = [
+    "faster-whisper>=1.1.0",
+    # Neural TTS. The onnx build reuses the onnxruntime faster-whisper
+    # already pulls in; the torch-based `kokoro` package does not.
+    "kokoro-onnx>=0.6.0",
+    "numpy>=2.0.0",
+    "sounddevice>=0.5.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/yarnotron"]
+include = [
+    "src/yarnotron/assets/audio/*.m4a",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["src"]
+testpaths = ["tests"]
