@@ -1,0 +1,16 @@
+.git
+.github
+.venv
+.env
+.pytest_cache
+.ruff_cache
+**/__pycache__
+.yarnotron
+bench
+docs
+tests
+ha_tests
+custom_components
+blueprints
+generated_media
+*.log

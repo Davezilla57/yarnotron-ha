@@ -1,0 +1,36 @@
+# Yarnotron backend for use with the Home Assistant integration.
+#
+#   cp .env.example .env     # then set YARNOTRON_API_TOKEN (and the model names)
+#   docker compose up -d --build
+#
+# Ollama is NOT in this file on purpose: it wants the GPU, and you probably
+# already run it on the machine with the GPU. Point YARNOTRON_OLLAMA_BASE_URL
+# at it. On Docker Desktop for Mac, host.docker.internal reaches the Mac itself.
+#
+# Not built in the environment this was written in; treat the first run as a test.
+
+services:
+  yarnotron:
+    build: .
+    image: yarnotron-ha:local
+    restart: unless-stopped
+    ports:
+      - "8989:8989"
+    environment:
+      # Required. The container listens on every interface, so without a token
+      # anything on the LAN could read the stories and use the parent controls.
+      YARNOTRON_API_TOKEN: "${YARNOTRON_API_TOKEN:?Set YARNOTRON_API_TOKEN in .env}"
+      YARNOTRON_OLLAMA_BASE_URL: "${YARNOTRON_OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
+      YARNOTRON_DEFAULT_MODEL: "${YARNOTRON_DEFAULT_MODEL:-gemma4:12b-mlx}"
+      YARNOTRON_SAFETY_MODEL: "${YARNOTRON_SAFETY_MODEL:-gemma4:e2b-mlx}"
+      YARNOTRON_EMBEDDING_MODEL: "${YARNOTRON_EMBEDDING_MODEL:-nomic-embed-text:v1.5}"
+      YARNOTRON_EMBEDDING_DIMENSIONS: "${YARNOTRON_EMBEDDING_DIMENSIONS:-768}"
+      YARNOTRON_SAFETY_STRIKE_LIMIT: "${YARNOTRON_SAFETY_STRIKE_LIMIT:-5}"
+    extra_hosts:
+      # Makes host.docker.internal work on Linux hosts too.
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - yarnotron-data:/data
+
+volumes:
+  yarnotron-data:

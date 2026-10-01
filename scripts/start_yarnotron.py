@@ -24,6 +24,35 @@ VOICE_PID = RUNTIME_DIR / "voice.pid"
 BACKEND_LOG = LOG_DIR / "backend.log"
 VOICE_LOG = LOG_DIR / "voice.log"
 DEFAULT_WELCOME_MESSAGE = "Welcome to Yarnotron, what story would you like to work on?"
+LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
+
+
+def exposure_warning(host: str, *, env: dict | None = None, dotenv: Path | None = None) -> str | None:
+    """A warning when the API will be reachable from the network with no token.
+
+    Binding to 0.0.0.0 is how a Home Assistant box on the LAN reaches Yarnotron.
+    It also means every device on that LAN -- the child's included -- can open
+    the dashboard, read stories and release safety blocks, unless a token is set.
+    """
+    if host in LOOPBACK_HOSTS:
+        return None
+    env = os.environ if env is None else env
+    if (env.get("YARNOTRON_API_TOKEN") or "").strip():
+        return None
+    dotenv = ROOT / ".env" if dotenv is None else dotenv
+    try:
+        lines = dotenv.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        lines = []
+    for line in lines:
+        key, sep, value = line.strip().partition("=")
+        if sep and key.strip() == "YARNOTRON_API_TOKEN" and value.strip().strip("\"'").strip():
+            return None
+    return (
+        f"WARNING: binding to {host} with no YARNOTRON_API_TOKEN set. Anything on your "
+        "network can read the stories and use the parent controls. Set a token in .env "
+        "(see .env.example) before exposing Yarnotron beyond this machine."
+    )
 
 
 def main() -> int:
@@ -105,6 +134,9 @@ def main() -> int:
         run(["uv", "sync", "--extra", "dev", "--extra", "voice"])
 
     if not args.no_backend:
+        warning = exposure_warning(args.host)
+        if warning:
+            print(warning, file=sys.stderr, flush=True)
         start_backend(args.host, args.port, reload=not args.no_reload)
         api_url = f"http://{args.host}:{args.port}"
         wait_for_health(f"{api_url}/health", timeout=args.timeout)
