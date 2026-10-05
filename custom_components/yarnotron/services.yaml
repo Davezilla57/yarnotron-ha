@@ -25,3 +25,15 @@ export_story:
   fields:
     story_id: {required: true, example: "story_abc", selector: {text: {}}}
     config_entry_id: {selector: {config_entry: {integration: yarnotron}}}
+launch:
+  fields:
+    wait: {default: true, selector: {boolean: {}}}
+    config_entry_id: {selector: {config_entry: {integration: yarnotron}}}
+shutdown:
+  fields:
+    force: {default: false, selector: {boolean: {}}}
+    wait: {default: true, selector: {boolean: {}}}
+    config_entry_id: {selector: {config_entry: {integration: yarnotron}}}
+status:
+  fields:
+    config_entry_id: {selector: {config_entry: {integration: yarnotron}}}

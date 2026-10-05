@@ -24,7 +24,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.typing import StateType
 from homeassistant.util import dt as dt_util
 
-from .entity import YarnotronEntity
+from .entity import MacEntity, YarnotronEntity
 from .models import YarnotronConfigEntry, YarnotronData
 
 PARALLEL_UPDATES = 0
@@ -104,7 +104,12 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     coordinator = entry.runtime_data.coordinator
-    async_add_entities(YarnotronSensor(coordinator, description) for description in SENSORS)
+    entities: list[SensorEntity] = [
+        YarnotronSensor(coordinator, description) for description in SENSORS
+    ]
+    if entry.runtime_data.supervisor_coordinator is not None:
+        entities.append(MacServicesSensor(entry.runtime_data.supervisor_coordinator))
+    async_add_entities(entities)
 
 
 class YarnotronSensor(YarnotronEntity, SensorEntity):
@@ -123,3 +128,34 @@ class YarnotronSensor(YarnotronEntity, SensorEntity):
         if self.entity_description.attrs_fn is None:
             return None
         return self.entity_description.attrs_fn(self.coordinator.data)
+
+
+class MacServicesSensor(MacEntity, SensorEntity):
+    """One word for the Mac side, with every service in the attributes."""
+
+    _attr_device_class = SensorDeviceClass.ENUM
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator, "mac_services")
+        self._attr_options = ["all_running", "degraded", "stopped", "unreachable"]
+
+    @property
+    def native_value(self) -> str:
+        data = self.coordinator.data or {}
+        if not data.get("reachable") or data.get("problem"):
+            return "unreachable"
+        services = data.get("services", [])
+        if services and all(s["ok"] for s in services):
+            return "all_running"
+        if services and not any(s["ok"] for s in services):
+            return "stopped"
+        return "degraded"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        data = self.coordinator.data or {}
+        return {
+            "services": {s["name"]: s["state"] for s in data.get("services", [])},
+            "problem": data.get("problem"),
+            "error": data.get("error"),
+        }

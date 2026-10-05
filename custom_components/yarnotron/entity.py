@@ -9,6 +9,7 @@ from .api import normalize_base_url
 from .const import CONF_CHILD_ID, DEFAULT_CHILD_ID, DOMAIN
 from .coordinator import YarnotronCoordinator
 from .models import YarnotronConfigEntry
+from .supervisor_coordinator import SupervisorCoordinator
 
 
 def device_info_for(entry: YarnotronConfigEntry) -> DeviceInfo:
@@ -39,3 +40,21 @@ class YarnotronEntity(CoordinatorEntity[YarnotronCoordinator]):
         self._attr_unique_id = f"{entry.entry_id}_{key}"
         self._attr_translation_key = key
         self._attr_device_info = device_info_for(entry)
+
+
+class MacEntity(CoordinatorEntity[SupervisorCoordinator]):
+    """Base for entities that read the Mac supervisor. Always available:
+    a Mac that cannot be reached is itself the thing they report."""
+
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator: SupervisorCoordinator, key: str) -> None:
+        super().__init__(coordinator)
+        entry = coordinator.config_entry
+        self._attr_unique_id = f"{entry.entry_id}_{key}"
+        self._attr_translation_key = key
+        self._attr_device_info = device_info_for(entry)
+
+    @property
+    def available(self) -> bool:
+        return True

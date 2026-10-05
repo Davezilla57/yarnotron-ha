@@ -38,16 +38,28 @@ from .const import (
     CONF_IDLE_MINUTES,
     CONF_INCLUDE_TRANSCRIPTS,
     CONF_KEEP_LISTENING,
+    CONF_MAC_ADDRESS,
     CONF_SCAN_INTERVAL,
+    CONF_SUPERVISOR_TOKEN,
+    CONF_SUPERVISOR_URL,
+    CONF_VOICE_POWER,
     DEFAULT_CHILD_ID,
     DEFAULT_IDLE_MINUTES,
     DEFAULT_INCLUDE_TRANSCRIPTS,
     DEFAULT_KEEP_LISTENING,
     DEFAULT_SCAN_INTERVAL,
+    DEFAULT_VOICE_POWER,
     DOMAIN,
     MAX_SCAN_INTERVAL,
     MIN_SCAN_INTERVAL,
 )
+from .supervisor_client import (
+    SupervisorAuthError,
+    SupervisorClient,
+    SupervisorError,
+    SupervisorUnreachableError,
+)
+from .wol import parse_mac
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -184,9 +196,13 @@ class YarnotronConfigFlow(ConfigFlow, domain=DOMAIN):
 
 class YarnotronOptionsFlow(OptionsFlowWithReload):
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
         if user_input is not None:
-            return self.async_create_entry(data=user_input)
-        o = self.config_entry.options
+            user_input = {k: v for k, v in user_input.items() if v not in (None, "")}
+            errors = await self._validate_power(user_input)
+            if not errors:
+                return self.async_create_entry(data=user_input)
+        o = user_input if user_input is not None else self.config_entry.options
         schema = vol.Schema(
             {
                 vol.Required(
@@ -218,6 +234,53 @@ class YarnotronOptionsFlow(OptionsFlowWithReload):
                     CONF_INCLUDE_TRANSCRIPTS,
                     default=o.get(CONF_INCLUDE_TRANSCRIPTS, DEFAULT_INCLUDE_TRANSCRIPTS),
                 ): BooleanSelector(),
+                vol.Required(
+                    CONF_VOICE_POWER, default=o.get(CONF_VOICE_POWER, DEFAULT_VOICE_POWER)
+                ): BooleanSelector(),
+                vol.Optional(
+                    CONF_SUPERVISOR_URL,
+                    description={"suggested_value": o.get(CONF_SUPERVISOR_URL)},
+                ): str,
+                vol.Optional(
+                    CONF_SUPERVISOR_TOKEN,
+                    description={"suggested_value": o.get(CONF_SUPERVISOR_TOKEN)},
+                ): _TOKEN_SELECTOR,
+                vol.Optional(
+                    CONF_MAC_ADDRESS,
+                    description={"suggested_value": o.get(CONF_MAC_ADDRESS)},
+                ): str,
             }
         )
-        return self.async_show_form(step_id="init", data_schema=schema)
+        return self.async_show_form(step_id="init", data_schema=schema, errors=errors)
+
+    async def _validate_power(self, options: dict[str, Any]) -> dict[str, str]:
+        """Check the Mac settings. An unreachable Mac is accepted: it may just be asleep."""
+        errors: dict[str, str] = {}
+        if mac := options.get(CONF_MAC_ADDRESS):
+            try:
+                parse_mac(mac)
+            except ValueError:
+                errors[CONF_MAC_ADDRESS] = "invalid_mac"
+        url = options.get(CONF_SUPERVISOR_URL)
+        if not url:
+            if options.get(CONF_MAC_ADDRESS) or options.get(CONF_SUPERVISOR_TOKEN):
+                errors[CONF_SUPERVISOR_URL] = "supervisor_url_needed"
+            return errors
+        try:
+            base = normalize_base_url(url)
+        except ValueError:
+            errors[CONF_SUPERVISOR_URL] = "invalid_url"
+            return errors
+        options[CONF_SUPERVISOR_URL] = base
+        client = SupervisorClient(
+            async_get_clientsession(self.hass), base, options.get(CONF_SUPERVISOR_TOKEN)
+        )
+        try:
+            await client.status()
+        except SupervisorAuthError:
+            errors[CONF_SUPERVISOR_TOKEN] = "supervisor_auth"
+        except SupervisorUnreachableError:
+            pass  # asleep or not started yet; the status sensor will say so
+        except SupervisorError:
+            errors[CONF_SUPERVISOR_URL] = "supervisor_not_supervisor"
+        return errors

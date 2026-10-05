@@ -41,6 +41,9 @@ class FakeBackend:
         }
         self.stream_error: dict[str, Any] | None = None
         self.create_session_404_for_story = False
+        self.shutting_down = False
+        self.prepare_calls = 0
+        self.cancel_calls = 0
 
     # ----------------------------------------------------------------- helpers
 
@@ -57,6 +60,8 @@ class FakeBackend:
         r.add_post("/v1/safety-events/{event_id}/review", self.review)
         r.add_post("/v1/safety-events/{event_id}/release", self.release)
         r.add_post("/v1/agent/turn/stream", self.stream)
+        r.add_post("/v1/system/prepare-shutdown", self.prepare_shutdown)
+        r.add_post("/v1/system/cancel-shutdown", self.cancel_shutdown)
         return app
 
     @web.middleware
@@ -111,6 +116,7 @@ class FakeBackend:
                 "version": "test",
                 "auth_required": self.token is not None,
                 "strike_limit": 5,
+                "shutting_down": self.shutting_down,
                 "stories": len(self.stories),
                 "models": {
                     "ollama_reachable": self.ollama,
@@ -132,6 +138,25 @@ class FakeBackend:
                 },
             }
         )
+
+    async def prepare_shutdown(self, request: web.Request) -> web.Response:
+        self.prepare_calls += 1
+        self.shutting_down = True
+        return web.json_response(
+            {
+                "draining": True,
+                "drained": True,
+                "sessions_ended": ["sess_1"],
+                "story": {"story_id": "story_1", "title": "The Brave Fox", "scenes": 4},
+                "checkpoint": "ok",
+                "notes": [],
+            }
+        )
+
+    async def cancel_shutdown(self, request: web.Request) -> web.Response:
+        self.cancel_calls += 1
+        self.shutting_down = False
+        return web.json_response({"draining": False})
 
     async def safety_events(self, request: web.Request) -> web.Response:
         return web.json_response(self.events[: int(request.query.get("limit", 50))])

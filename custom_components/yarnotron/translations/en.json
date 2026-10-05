@@ -52,15 +52,30 @@
           "scan_interval": "Status refresh interval",
           "idle_minutes": "Start a fresh session after being idle for",
           "keep_listening": "Keep listening after each reply",
-          "include_transcripts": "Include what the child said in alerts"
+          "include_transcripts": "Include what the child said in alerts",
+          "voice_power": "Allow launching and shutting down by voice",
+          "supervisor_url": "Mac supervisor address",
+          "supervisor_token": "Mac supervisor token",
+          "mac_address": "Mac's MAC address (to wake it)"
         },
         "data_description": {
           "scan_interval": "How often Home Assistant checks the backend for safety events.",
           "idle_minutes": "Minutes of silence before the next chat begins a new session.",
           "keep_listening": "Lets the child reply without saying the wake word again.",
-          "include_transcripts": "Off by default. When on, alert attributes carry an excerpt and are stored in Home Assistant's database."
+          "include_transcripts": "Off by default. When on, alert attributes carry an excerpt and are stored in Home Assistant's database.",
+          "voice_power": "When off, only the status question works by voice; launch and shut down need the buttons or services.",
+          "supervisor_url": "Where the Yarnotron supervisor runs on the MacBook, like 192.168.1.20:8990. Leave empty to turn Mac control off.",
+          "supervisor_token": "Must match the token in ~/.yarnotron-supervisor/supervisor.toml.",
+          "mac_address": "Optional. Lets 'launch' wake a sleeping Mac with Wake-on-LAN. Unreliable on MacBooks on Wi-Fi."
         }
       }
+    },
+    "error": {
+      "invalid_mac": "That is not a MAC address (like aa:bb:cc:dd:ee:ff).",
+      "supervisor_url_needed": "Enter the supervisor address, or clear the token and MAC address.",
+      "invalid_url": "That is not a valid address.",
+      "supervisor_auth": "The supervisor rejected this token.",
+      "supervisor_not_supervisor": "That address answered, but not like the Yarnotron supervisor."
     }
   },
   "entity": {
@@ -79,6 +94,15 @@
       },
       "stories": {
         "name": "Stories"
+      },
+      "mac_services": {
+        "name": "Mac services",
+        "state": {
+          "all_running": "All running",
+          "degraded": "Degraded",
+          "stopped": "Stopped",
+          "unreachable": "Unreachable"
+        }
       }
     },
     "binary_sensor": {
@@ -87,6 +111,9 @@
       },
       "session_locked": {
         "name": "Session locked"
+      },
+      "mac_supervisor": {
+        "name": "Mac supervisor"
       }
     },
     "switch": {
@@ -100,6 +127,12 @@
       },
       "end_session": {
         "name": "End session"
+      },
+      "launch": {
+        "name": "Launch Yarnotron"
+      },
+      "shutdown": {
+        "name": "Shut down Yarnotron"
       }
     },
     "event": {
@@ -209,6 +242,48 @@
         "config_entry_id": {
           "name": "Yarnotron entry",
           "description": "Which Yarnotron entry (child) to act on. Optional when only one is set up."
+        }
+      }
+    },
+    "launch": {
+      "name": "Launch",
+      "description": "Check the Mac side and start anything that isn't answering.",
+      "fields": {
+        "wait": {
+          "name": "Wait",
+          "description": "Wait for the launch to finish and return the result."
+        },
+        "config_entry_id": {
+          "name": "Entry",
+          "description": "Which Yarnotron entry."
+        }
+      }
+    },
+    "shutdown": {
+      "name": "Shut down",
+      "description": "Save the current story, then stop the Mac's Yarnotron processes.",
+      "fields": {
+        "force": {
+          "name": "Force",
+          "description": "Stop even if saving fails or work is unfinished. Unsaved safety reviews may be lost."
+        },
+        "wait": {
+          "name": "Wait",
+          "description": "Wait for the shutdown to finish and return the result."
+        },
+        "config_entry_id": {
+          "name": "Entry",
+          "description": "Which Yarnotron entry."
+        }
+      }
+    },
+    "status": {
+      "name": "Status",
+      "description": "List Home Assistant and Mac components and whether each is working.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Entry",
+          "description": "Which Yarnotron entry."
         }
       }
     }

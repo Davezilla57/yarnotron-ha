@@ -10,7 +10,10 @@ from homeassistant.config_entries import ConfigEntry
 if TYPE_CHECKING:
     from .api import YarnotronApi
     from .coordinator import YarnotronCoordinator
+    from .power import PowerController
     from .session import SessionManager
+    from .supervisor_client import SupervisorClient
+    from .supervisor_coordinator import SupervisorCoordinator
 
 
 @dataclass
@@ -41,6 +44,16 @@ class YarnotronRuntimeData:
     # What the last reply said, for "repeat that". Kept in memory only: it is
     # the child's story, so it is not written to disk or to entity attributes.
     last_response: str | None = None
+    # The Mac supervisor, when its address is set in the options.
+    supervisor: SupervisorClient | None = None
+    supervisor_coordinator: SupervisorCoordinator | None = None
+    power: PowerController | None = None
+    mac_address: str | None = None
+    # True after a successful shutdown, until the next launch. While set the
+    # agent says so instead of trying a backend that is deliberately off.
+    powered_down: bool = False
+    # Monotonic deadline for a spoken "shut down" that is waiting for a "yes".
+    shutdown_confirm_until: float = 0.0
 
 
 type YarnotronConfigEntry = ConfigEntry[YarnotronRuntimeData]

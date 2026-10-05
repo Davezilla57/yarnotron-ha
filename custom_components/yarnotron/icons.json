@@ -15,6 +15,12 @@
       },
       "stories": {
         "default": "mdi:book-open-page-variant-outline"
+      },
+      "mac_services": {
+        "default": "mdi:laptop",
+        "state": {
+          "unreachable": "mdi:laptop-off"
+        }
       }
     },
     "binary_sensor": {
@@ -26,6 +32,9 @@
         "state": {
           "on": "mdi:lock-alert"
         }
+      },
+      "mac_supervisor": {
+        "default": "mdi:laptop"
       }
     },
     "switch": {
@@ -39,6 +48,12 @@
       },
       "end_session": {
         "default": "mdi:stop-circle-outline"
+      },
+      "launch": {
+        "default": "mdi:rocket-launch-outline"
+      },
+      "shutdown": {
+        "default": "mdi:power"
       }
     },
     "event": {
@@ -68,6 +83,15 @@
     },
     "export_story": {
       "service": "mdi:file-export-outline"
+    },
+    "launch": {
+      "service": "mdi:rocket-launch-outline"
+    },
+    "shutdown": {
+      "service": "mdi:power"
+    },
+    "status": {
+      "service": "mdi:clipboard-check-outline"
     }
   }
 }

@@ -123,6 +123,18 @@ class YarnotronApi:
             body={"released_by": released_by, "review_note": note},
         )
 
+    async def prepare_shutdown(self, timeout: float = 30.0) -> dict[str, Any]:
+        """Drain running work, end sessions, save. The backend keeps running, refusing new turns."""
+        return await self._json(
+            "POST",
+            "/v1/system/prepare-shutdown",
+            params={"timeout": timeout},
+            timeout=timeout + REQUEST_TIMEOUT,
+        )
+
+    async def cancel_shutdown(self) -> dict[str, Any]:
+        return await self._json("POST", "/v1/system/cancel-shutdown", body={})
+
     # ------------------------------------------------------------------- turn
 
     async def stream_turn(
@@ -178,9 +190,10 @@ class YarnotronApi:
         params: dict[str, Any] | None = None,
         body: dict[str, Any] | None = None,
         authenticated: bool = True,
+        timeout: float = REQUEST_TIMEOUT,
     ) -> Any:
         response_text = await self._text(
-            method, path, params=params, body=body, authenticated=authenticated
+            method, path, params=params, body=body, authenticated=authenticated, timeout=timeout
         )
         try:
             return json.loads(response_text)
@@ -195,9 +208,10 @@ class YarnotronApi:
         params: dict[str, Any] | None = None,
         body: dict[str, Any] | None = None,
         authenticated: bool = True,
+        timeout: float = REQUEST_TIMEOUT,
     ) -> str:
         headers = self._headers if authenticated else {"Accept": "application/json"}
-        timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
+        timeout = aiohttp.ClientTimeout(total=timeout)
         try:
             async with self._session.request(
                 method,

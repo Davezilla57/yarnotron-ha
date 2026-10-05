@@ -9,7 +9,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .api import YarnotronError
 from .const import DOMAIN
-from .entity import YarnotronEntity
+from .entity import MacEntity, YarnotronEntity
 from .models import YarnotronConfigEntry
 
 PARALLEL_UPDATES = 1
@@ -22,12 +22,16 @@ async def async_setup_entry(
 ) -> None:
     coordinator = entry.runtime_data.coordinator
     sessions = entry.runtime_data.sessions
-    async_add_entities(
-        [
-            StartNewSessionButton(coordinator, sessions),
-            EndSessionButton(coordinator, sessions),
+    entities: list[ButtonEntity] = [
+        StartNewSessionButton(coordinator, sessions),
+        EndSessionButton(coordinator, sessions),
+    ]
+    if entry.runtime_data.supervisor_coordinator is not None:
+        entities += [
+            LaunchButton(entry.runtime_data.supervisor_coordinator),
+            ShutdownButton(entry.runtime_data.supervisor_coordinator),
         ]
-    )
+    async_add_entities(entities)
 
 
 class _SessionButton(YarnotronEntity, ButtonEntity):
@@ -66,3 +70,27 @@ class EndSessionButton(_SessionButton):
     async def async_press(self) -> None:
         await self._sessions.async_end_session()
         await self.coordinator.async_request_refresh()
+
+
+class LaunchButton(MacEntity, ButtonEntity):
+    """Check everything and start whatever is not answering. Returns at once; the
+    outcome arrives as a notification (only when something needs attention) and
+    as a `yarnotron_power_finished` event."""
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator, "launch")
+
+    async def async_press(self) -> None:
+        power = self.coordinator.config_entry.runtime_data.power
+        power.async_launch()
+
+
+class ShutdownButton(MacEntity, ButtonEntity):
+    """Save the story, then stop the Mac's processes. No confirmation: a button is a grown-up's."""
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator, "shutdown")
+
+    async def async_press(self) -> None:
+        power = self.coordinator.config_entry.runtime_data.power
+        power.async_shutdown()

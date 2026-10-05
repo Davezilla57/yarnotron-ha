@@ -14,11 +14,12 @@ cannot stream simply speaks the whole reply at the end.
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from homeassistant.components import conversation
+from homeassistant.components import conversation, persistent_notification
 from homeassistant.components.conversation import AssistantContentDeltaDict
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
@@ -28,16 +29,24 @@ from .api import YarnotronApiError, YarnotronAuthError, YarnotronError
 from .const import (
     BACKEND_ERROR_TEXT,
     CONF_KEEP_LISTENING,
+    CONF_VOICE_POWER,
     DEFAULT_KEEP_LISTENING,
+    DEFAULT_VOICE_POWER,
     EMPTY_REPLY_TEXT,
     HELP_TEXT,
     LOCKED_TEXT,
     NOTHING_TO_REPEAT_TEXT,
+    POWER_DISABLED_TEXT,
+    POWERED_DOWN_TEXT,
+    SHUTDOWN_CANCELLED_TEXT,
+    SHUTDOWN_CONFIRM_SECONDS,
+    SHUTDOWN_CONFIRM_TEXT,
     SLEEP_TEXT,
     STOP_TEXT,
     STORYTIME_OFF_TEXT,
+    VOICE_POWER_WAIT,
 )
-from .controls import ControlIntent, classify
+from .controls import POWER_INTENTS, ControlIntent, classify, is_confirmation
 from .entity import device_info_for
 from .models import YarnotronConfigEntry, YarnotronRuntimeData
 from .session import SessionLockedError
@@ -106,14 +115,98 @@ class YarnotronConversationEntity(
     ) -> conversation.ConversationResult:
         runtime = self._runtime
 
+        # A spoken "shut down" asks for a yes first. Whatever comes next either
+        # confirms it, declines it, or is something else and cancels it quietly.
+        if runtime.shutdown_confirm_until:
+            pending = time.monotonic() < runtime.shutdown_confirm_until
+            runtime.shutdown_confirm_until = 0.0
+            answer = is_confirmation(user_input.text) if pending else None
+            if answer is True:
+                return await self._power_shutdown(user_input, chat_log)
+            if answer is False:
+                return self._say(user_input, chat_log, SHUTDOWN_CANCELLED_TEXT, keep_listening=False)
+
+        control = classify(user_input.text)
+
+        # Starting, stopping and checking the machines is not storytime, so these
+        # work while Storytime is off and while a session is locked.
+        if control in POWER_INTENTS:
+            return await self._handle_power(user_input, chat_log, control)
+
         if not runtime.storytime_enabled:
             return self._say(user_input, chat_log, STORYTIME_OFF_TEXT, keep_listening=False)
 
-        control = classify(user_input.text)
+        if runtime.powered_down:
+            return self._say(user_input, chat_log, POWERED_DOWN_TEXT, keep_listening=False)
+
         if control is not None:
             return await self._handle_control(user_input, chat_log, control)
 
         return await self._handle_story_turn(user_input, chat_log)
+
+    # ------------------------------------------------------------- power
+
+    async def _handle_power(
+        self,
+        user_input: conversation.ConversationInput,
+        chat_log: conversation.ChatLog,
+        control: ControlIntent,
+    ) -> conversation.ConversationResult:
+        runtime = self._runtime
+        power = runtime.power
+        assert power is not None
+
+        if control is ControlIntent.STATUS:
+            report = await power.async_status()
+            if not report.ok or any(c.issue for c in report.components):
+                self._notify_status(report)
+            return self._say(user_input, chat_log, report.spoken(), keep_listening=False)
+
+        if not bool(self.entry.options.get(CONF_VOICE_POWER, DEFAULT_VOICE_POWER)):
+            return self._say(user_input, chat_log, POWER_DISABLED_TEXT, keep_listening=False)
+
+        if control is ControlIntent.SHUTDOWN:
+            runtime.shutdown_confirm_until = time.monotonic() + SHUTDOWN_CONFIRM_SECONDS
+            return self._say(user_input, chat_log, SHUTDOWN_CONFIRM_TEXT, keep_listening=True)
+
+        operation = power.async_launch()
+        return await self._await_power(user_input, chat_log, operation, "Starting up now.")
+
+    async def _power_shutdown(
+        self,
+        user_input: conversation.ConversationInput,
+        chat_log: conversation.ChatLog,
+    ) -> conversation.ConversationResult:
+        power = self._runtime.power
+        assert power is not None
+        operation = power.async_shutdown()
+        return await self._await_power(user_input, chat_log, operation, "Shutting down now.")
+
+    async def _await_power(
+        self,
+        user_input: conversation.ConversationInput,
+        chat_log: conversation.ChatLog,
+        operation,
+        working_text: str,
+    ) -> conversation.ConversationResult:
+        """Wait a while for the result; if it is slow, say so and let it finish by itself."""
+        result = await operation.wait(VOICE_POWER_WAIT)
+        if result is None:
+            text = (
+                f"{working_text} This is taking a while. I'll keep going, and you can ask "
+                "for the Yarnotron status in a minute."
+            )
+        else:
+            text = result.spoken
+        return self._say(user_input, chat_log, text, keep_listening=False)
+
+    def _notify_status(self, report) -> None:
+        persistent_notification.async_create(
+            self.hass,
+            report.markdown(),
+            title="Yarnotron status: something needs attention",
+            notification_id=f"{self.entry.domain}_status_{self.entry.entry_id}",
+        )
 
     async def _handle_control(
         self,

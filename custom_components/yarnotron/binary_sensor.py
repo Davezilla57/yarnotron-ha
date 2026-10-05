@@ -11,7 +11,7 @@ from homeassistant.components.binary_sensor import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .entity import YarnotronEntity
+from .entity import MacEntity, YarnotronEntity
 from .models import YarnotronConfigEntry
 
 PARALLEL_UPDATES = 0
@@ -23,12 +23,13 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     coordinator = entry.runtime_data.coordinator
-    async_add_entities(
-        [
-            OllamaReachableSensor(coordinator),
-            SessionLockedSensor(coordinator, entry.runtime_data.sessions),
-        ]
-    )
+    entities: list[BinarySensorEntity] = [
+        OllamaReachableSensor(coordinator),
+        SessionLockedSensor(coordinator, entry.runtime_data.sessions),
+    ]
+    if entry.runtime_data.supervisor_coordinator is not None:
+        entities.append(MacSupervisorSensor(entry.runtime_data.supervisor_coordinator))
+    async_add_entities(entities)
 
 
 class OllamaReachableSensor(YarnotronEntity, BinarySensorEntity):
@@ -74,3 +75,23 @@ class SessionLockedSensor(YarnotronEntity, BinarySensorEntity):
     @property
     def is_on(self) -> bool:
         return self._sessions.locked
+
+
+class MacSupervisorSensor(MacEntity, BinarySensorEntity):
+    """Whether the Mac's supervisor answers. Off means the Mac is asleep, off, or the
+    supervisor is not running; the attributes say which."""
+
+    _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator, "mac_supervisor")
+
+    @property
+    def is_on(self) -> bool:
+        data = self.coordinator.data or {}
+        return bool(data.get("reachable")) and data.get("problem") is None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        data = self.coordinator.data or {}
+        return {"problem": data.get("problem"), "error": data.get("error")}

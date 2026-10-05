@@ -31,6 +31,9 @@ SERVICE_END_SESSION = "end_session"
 SERVICE_SET_STORY = "set_story"
 SERVICE_LIST_STORIES = "list_stories"
 SERVICE_EXPORT_STORY = "export_story"
+SERVICE_LAUNCH = "launch"
+SERVICE_SHUTDOWN = "shutdown"
+SERVICE_STATUS = "status"
 
 _ENTRY = {vol.Optional("config_entry_id"): cv.string}
 
@@ -46,6 +49,15 @@ SCHEMAS: dict[str, vol.Schema] = {
     SERVICE_SET_STORY: vol.Schema({**_ENTRY, vol.Optional("story_id"): vol.Any(None, cv.string)}),
     SERVICE_LIST_STORIES: vol.Schema(_ENTRY),
     SERVICE_EXPORT_STORY: vol.Schema({**_ENTRY, vol.Required("story_id"): cv.string}),
+    SERVICE_LAUNCH: vol.Schema({**_ENTRY, vol.Optional("wait", default=True): cv.boolean}),
+    SERVICE_SHUTDOWN: vol.Schema(
+        {
+            **_ENTRY,
+            vol.Optional("force", default=False): cv.boolean,
+            vol.Optional("wait", default=True): cv.boolean,
+        }
+    ),
+    SERVICE_STATUS: vol.Schema(_ENTRY),
 }
 
 
@@ -152,6 +164,37 @@ def async_setup_services(hass: HomeAssistant) -> None:
             raise _failed(err) from err
         return {"story_id": call.data["story_id"], "markdown": markdown}
 
+    async def _power(call: ServiceCall, operation) -> ServiceResponse:
+        if not call.data["wait"]:
+            return {"started": True, "kind": operation.kind}
+        result = await operation.wait(float("inf"))
+        return {
+            "ok": result.ok,
+            "kind": result.kind,
+            "summary": result.spoken,
+            "details": result.markdown,
+        }
+
+    async def launch(call: ServiceCall) -> ServiceResponse:
+        entry = _entry_for(hass, call)
+        return await _power(call, entry.runtime_data.power.async_launch())
+
+    async def shutdown(call: ServiceCall) -> ServiceResponse:
+        entry = _entry_for(hass, call)
+        return await _power(
+            call, entry.runtime_data.power.async_shutdown(force=call.data["force"])
+        )
+
+    async def status(call: ServiceCall) -> ServiceResponse:
+        entry = _entry_for(hass, call)
+        report = await entry.runtime_data.power.async_status()
+        return {
+            "ok": report.ok,
+            "summary": report.spoken(),
+            "components": report.as_dict(),
+            "markdown": report.markdown(),
+        }
+
     handlers: dict[str, Any] = {
         SERVICE_REVIEW: (review, SupportsResponse.NONE),
         SERVICE_RELEASE: (release, SupportsResponse.NONE),
@@ -160,6 +203,9 @@ def async_setup_services(hass: HomeAssistant) -> None:
         SERVICE_SET_STORY: (set_story, SupportsResponse.NONE),
         SERVICE_LIST_STORIES: (list_stories, SupportsResponse.ONLY),
         SERVICE_EXPORT_STORY: (export_story, SupportsResponse.ONLY),
+        SERVICE_LAUNCH: (launch, SupportsResponse.OPTIONAL),
+        SERVICE_SHUTDOWN: (shutdown, SupportsResponse.OPTIONAL),
+        SERVICE_STATUS: (status, SupportsResponse.ONLY),
     }
     for name, (handler, response) in handlers.items():
         hass.services.async_register(

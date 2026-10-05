@@ -12,6 +12,7 @@ from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from .fake_backend import TOKEN, FakeBackend
+from .fake_supervisor import FakeSupervisor
 
 pytest_plugins = ["pytest_homeassistant_custom_component"]
 
@@ -69,3 +70,14 @@ async def setup(hass: HomeAssistant, entry_for):
         return entry
 
     return _setup
+
+
+@pytest.fixture
+async def supervisor() -> AsyncGenerator[tuple[FakeSupervisor, str]]:
+    fake = FakeSupervisor()
+    server = TestServer(fake.app())
+    await server.start_server()
+    try:
+        yield fake, str(server.make_url("")).rstrip("/")
+    finally:
+        await server.close()

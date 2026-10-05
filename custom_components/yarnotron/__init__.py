@@ -15,13 +15,19 @@ from .const import (
     CONF_API_TOKEN,
     CONF_CHILD_ID,
     CONF_IDLE_MINUTES,
+    CONF_MAC_ADDRESS,
+    CONF_SUPERVISOR_TOKEN,
+    CONF_SUPERVISOR_URL,
     DEFAULT_IDLE_MINUTES,
     DOMAIN,
 )
 from .coordinator import YarnotronCoordinator
 from .models import YarnotronConfigEntry, YarnotronRuntimeData
+from .power import PowerController
 from .services import async_setup_services
 from .session import SessionManager
+from .supervisor_client import SupervisorClient
+from .supervisor_coordinator import SupervisorCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -70,7 +76,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: YarnotronConfigEntry) ->
     # An authentication failure still starts re-authentication.
     await coordinator.async_refresh()
 
-    entry.runtime_data = YarnotronRuntimeData(api=api, coordinator=coordinator, sessions=sessions)
+    runtime = YarnotronRuntimeData(api=api, coordinator=coordinator, sessions=sessions)
+    entry.runtime_data = runtime
+    runtime.power = PowerController(hass, entry)
+
+    supervisor_url = (entry.options.get(CONF_SUPERVISOR_URL) or "").strip()
+    if supervisor_url:
+        runtime.supervisor = SupervisorClient(
+            async_get_clientsession(hass),
+            normalize_base_url(supervisor_url),
+            entry.options.get(CONF_SUPERVISOR_TOKEN),
+        )
+        runtime.mac_address = (entry.options.get(CONF_MAC_ADDRESS) or "").strip() or None
+        runtime.supervisor_coordinator = SupervisorCoordinator(hass, entry, runtime.supervisor)
+        await runtime.supervisor_coordinator.async_refresh()
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
