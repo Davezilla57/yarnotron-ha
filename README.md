@@ -12,6 +12,7 @@ the story brain with its safety review, strike lock and parent controls.
 - `blueprints/automation/yarnotron/` - push a notification on a safety alert
 - `Dockerfile`, `docker-compose.yml` - run the backend headless on the AI machine
 - `docs/yarnotron-ha-guide.html` - architecture, code changes, setup and user guide
+- `src/yarnotron/supervisor/`, `supervisor.example.toml` - Mac-side service so Home Assistant can launch, shut down and check the Mac's processes (`docs/mac-power-control.md`)
 - `ha_tests/` - integration tests (`pip install -r requirements_test_ha.txt`, then `pytest ha_tests`)
 
 Set `YARNOTRON_API_TOKEN` on the backend whenever it is reachable from the

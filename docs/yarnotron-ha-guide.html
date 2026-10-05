@@ -99,7 +99,7 @@ footer{color:var(--muted);font-size:13px;border-top:1px solid var(--line);paddin
 <nav class="idx" aria-label="Sections">
   <div class="brand">Yarnotron for Home Assistant</div>
   <a href="#summary">Summary</a><a href="#structure">Structure</a><a href="#capabilities">Capabilities</a>
-  <a href="#changes">Code changes</a><a href="#install">Implementation</a><a href="#use">User guide</a><a href="#limits">Verification</a>
+  <a href="#changes">Code changes</a><a href="#install">Implementation</a><a href="#use">User guide</a><a href="#power">Power control</a><a href="#limits">Verification</a>
 </nav>
 <main>
 
@@ -381,13 +381,35 @@ data:
   </dl>
 </section>
 
+<section id="power">
+  <h2>Power control: launch, shut down, status</h2>
+  <p>The backend lives on the MacBook, which may be asleep or have nothing running. A small <strong>supervisor</strong> runs on the Mac all the time (a launchd job, Python standard library only). Home Assistant asks it to check, start and stop Ollama, Whisper and the Yarnotron backend. Setup steps are in <code>docs/mac-power-control.md</code>.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>Say</th><th>What happens</th></tr></thead>
+    <tbody>
+      <tr><td><strong>"Launch Yarnotron"</strong></td><td>If the Mac does not answer and you gave its MAC address, a wake-up packet is sent. Then each Mac process is checked in dependency order (Ollama, Whisper, backend). Anything not <em>answering</em> is started, and a hung copy holding its port is restarted. A backend left refusing stories by an earlier shutdown is told to resume.</td></tr>
+      <tr><td><strong>"Shut down Yarnotron"</strong></td><td>It asks first: "say yes, shut down". On yes, the open session is ended, the backend refuses new turns, waits for running turns and deferred safety reviews, ends open sessions, folds the database log into the file and reports the story it saved. Only then are the processes stopped, in reverse order. If saving fails or work is unfinished, nothing is stopped.</td></tr>
+      <tr><td><strong>"Yarnotron status"</strong></td><td>Speaks every component on both sides with its state. Home Assistant: integration, voice agent, backend link, Piper and Whisper entities, voice satellites, story session. Mac: supervisor, Ollama, Whisper, backend.</td></tr>
+    </tbody>
+  </table></div>
+  <h3>When something does not behave</h3>
+  <p>The spoken answer is one plain sentence naming the cause, for example "Whisper started and then quit straight away (exit code 3)". The full account goes to a Home Assistant notification: what was observed, the last lines of that process's log, and what to try. The same details are in the status service's response and the Mac services sensor. Distinguished causes include: command not found, quit at startup, running but never answering, port held by an unknown process (never killed), supervisor not running versus Mac asleep, wrong token, backend busy, and a process that came back after being stopped.</p>
+  <h3>Also available</h3>
+  <ul>
+    <li>Buttons <strong>Launch Yarnotron</strong> and <strong>Shut down Yarnotron</strong>, a <strong>Mac services</strong> sensor and a <strong>Mac supervisor</strong> sensor.</li>
+    <li>Services <code>yarnotron.launch</code>, <code>yarnotron.shutdown</code> (with <code>force</code>) and <code>yarnotron.status</code>, which return their result for automations. An event <code>yarnotron_power_finished</code> fires when a launch or shutdown ends.</li>
+    <li>Options: supervisor address and token, the Mac's MAC address, and a switch that turns voice launch and shutdown off (status still works), so a child cannot power it down.</li>
+  </ul>
+  <p><strong>Limits.</strong> A MacBook that sleeps cannot run anything until woken, and Wake-on-LAN on a MacBook over Wi-Fi is unreliable, so keep it awake on power. The launchd agent runs only while you are logged in. The supervisor can stop only processes it can find by their port. Ollama's menu-bar app may restart the server after a stop; the status check reports that rather than hiding it.</p>
+</section>
+
 <section id="limits">
   <h2>Verification and limits</h2>
   <div class="cols">
     <div class="panel"><h3>Checked</h3>
       <ul>
-        <li>290 backend tests pass, including auth on every <code>/v1</code> route family.</li>
-        <li>48 integration tests pass against Home Assistant 2026.2.3 with a fake backend over real HTTP: setup, reauth, alert de-duplication, transcript privacy, streaming, the strike lock holding until a parent acts, idle expiry, services, and the blueprint firing.</li>
+        <li>313 backend tests pass, including auth on every <code>/v1</code> route family, the graceful shutdown drain, and the Mac supervisor run against real throwaway processes (start order, exit-at-startup, never-answers, hung port holder, refusal to kill an unknown process, save-before-stop).</li>
+        <li>92 integration tests pass against Home Assistant 2026.2.3 with a fake backend over real HTTP: setup, reauth, alert de-duplication, transcript privacy, streaming, the strike lock holding until a parent acts, idle expiry, services, the blueprint firing, and the voice launch, shutdown (with confirmation) and status paths with success, failure and unreachable-Mac cases.</li>
         <li>Two key tests were confirmed to fail when the lock check or the transcript privacy rule was removed.</li>
         <li>The backend's install and start steps were run by hand outside Docker with no audio libraries.</li>
       </ul></div>
@@ -397,6 +419,7 @@ data:
         <li>No real voice satellite, wake word or speaker was used. Streaming speech timing is untested on hardware.</li>
         <li>Only Home Assistant 2026.2 was tested. <code>hacs.json</code> asks for 2026.2.0 or newer.</li>
         <li>Home Assistant Cloud speech was not tested; local Whisper and Piper are the recommended path.</li>
+        <li>The Mac supervisor has never run on a real Mac: launchd install, <code>lsof</code>, <code>uv</code> start-up, Ollama's menu-bar app and Wake-on-LAN are untested. Process control was tested on Linux.</li>
       </ul></div>
   </div>
   <p>The code in this repository has not been pushed anywhere. Create a GitHub repository named Yarnotron-HA and run <code>git remote add origin &lt;url&gt;</code> then <code>git push -u origin main</code>.</p>
