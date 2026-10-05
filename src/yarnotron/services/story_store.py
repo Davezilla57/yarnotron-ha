@@ -71,6 +71,8 @@ class StoryRepository(Protocol):
 
     async def list_sessions(self) -> list[StorySession]: ...
 
+    async def checkpoint(self) -> str: ...
+
     async def end_session(
         self,
         session_id: str,

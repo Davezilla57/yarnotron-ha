@@ -29,6 +29,7 @@ from yarnotron.models.story import CreateStoryRequest, Story, StoryPatch
 from yarnotron.services.incremental_json import SentenceAccumulator
 from yarnotron.services.interests import InterestEnricher, schedule_enrichment
 from yarnotron.services.memory import Embedder, StoryMemoryBuilder, get_embedder, get_memory_builder
+from yarnotron.services.shutdown import get_shutdown
 from yarnotron.services.ollama import OllamaClient, OllamaUnavailableError, get_ollama_client
 from yarnotron.services.story_store import StoryRepository, get_story_repository
 
@@ -631,6 +632,7 @@ class TurnProcessor:
                 logger.exception("deferred input review failed for turn %s", turn_id)
 
         task = asyncio.create_task(run())
+        get_shutdown().track_task(task)
         self._input_review_tasks.add(task)
         task.add_done_callback(self._input_review_tasks.discard)
 

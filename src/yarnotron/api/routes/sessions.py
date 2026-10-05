@@ -1,12 +1,18 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from yarnotron.models.operations import CreateSessionRequest, EndSessionRequest, StorySession
+from yarnotron.services.shutdown import reject_while_draining
 from yarnotron.services.story_store import StoryRepository, get_story_repository
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 
-@router.post("", response_model=StorySession, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=StorySession,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(reject_while_draining)],
+)
 async def create_session(
     request: CreateSessionRequest,
     repository: StoryRepository = Depends(get_story_repository),

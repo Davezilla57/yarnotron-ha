@@ -22,6 +22,7 @@ from yarnotron.agent.safety import SafetyReviewer
 from yarnotron.models.interests import ChildInterest
 from yarnotron.models.safety import SafetyAction
 from yarnotron.services.ollama import OllamaClient, OllamaUnavailableError
+from yarnotron.services.shutdown import get_shutdown
 from yarnotron.services.story_store import StoryRepository
 
 logger = logging.getLogger(__name__)
@@ -116,6 +117,7 @@ def schedule_enrichment(
             logger.exception("interest enrichment failed for %r", interest.name)
 
     task = asyncio.create_task(run())
+    get_shutdown().track_task(task)
     tasks.add(task)
     task.add_done_callback(tasks.discard)
     return task

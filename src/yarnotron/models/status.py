@@ -48,3 +48,31 @@ class StatusResponse(BaseModel):
     stories: int
     models: ModelsStatus
     child: ChildStatus
+    # True between a prepare-shutdown and the process stopping (or being told to resume).
+    shutting_down: bool = False
+
+
+class StorySaved(BaseModel):
+    """The story that was open when the shutdown began, as it is now stored."""
+
+    story_id: str
+    title: str
+    scenes: int
+    characters: int
+    updated_at: str
+
+
+class PrepareShutdownResponse(BaseModel):
+    """What a graceful shutdown did, in enough detail to explain a partial one."""
+
+    draining: bool
+    drained: bool
+    waited_seconds: float
+    turns_in_flight_at_start: int
+    turns_still_running: int
+    background_tasks_finished: int
+    background_tasks_cancelled: int
+    sessions_ended: list[str] = Field(default_factory=list)
+    story: StorySaved | None = None
+    checkpoint: str
+    notes: list[str] = Field(default_factory=list)

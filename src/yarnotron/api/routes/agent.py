@@ -8,8 +8,9 @@ from fastapi.responses import StreamingResponse
 from yarnotron.agent.turn_processor import TurnProcessor, get_turn_processor
 from yarnotron.models.agent import AgentTurnRequest, AgentTurnResponse
 from yarnotron.services.ollama import OllamaUnavailableError
+from yarnotron.services.shutdown import get_shutdown, reject_while_draining
 
-router = APIRouter(prefix="/agent", tags=["agent"])
+router = APIRouter(prefix="/agent", tags=["agent"], dependencies=[Depends(reject_while_draining)])
 
 
 @router.post("/turn", response_model=AgentTurnResponse)
@@ -18,7 +19,8 @@ async def process_turn(
     processor: TurnProcessor = Depends(get_turn_processor),
 ) -> AgentTurnResponse:
     try:
-        return await processor.process(request)
+        with get_shutdown().turn():
+            return await processor.process(request)
     except OllamaUnavailableError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except KeyError as exc:
@@ -55,7 +57,8 @@ async def _turn_events(
 
     async def run() -> None:
         try:
-            response = await processor.process(request, on_sentence=on_sentence)
+            with get_shutdown().turn():
+                response = await processor.process(request, on_sentence=on_sentence)
             await queue.put({"turn": response.model_dump(mode="json")})
         except OllamaUnavailableError as exc:
             await queue.put({"error": str(exc), "status": 503})

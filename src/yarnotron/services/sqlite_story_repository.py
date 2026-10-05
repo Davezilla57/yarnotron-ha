@@ -171,6 +171,20 @@ class SqliteStoryRepository:
         connection.daemon = True
         return _VecConnection(connection)
 
+    async def checkpoint(self) -> str:
+        """Fold the write-ahead log into the database file, so the file on disk is whole.
+
+        Harmless when the database is not in WAL mode (SQLite answers with
+        zeros). Returns a short description for the shutdown report.
+        """
+        async with self._connect() as conn:
+            cursor = await conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            row = await cursor.fetchone()
+        busy, log_frames, checkpointed = (row or (0, 0, 0))[:3]
+        if busy:
+            return f"incomplete: another connection was busy ({checkpointed}/{log_frames} frames)"
+        return "ok"
+
     # ---------------------------------------------------------------- stories
 
     async def create(self, request: CreateStoryRequest) -> Story:

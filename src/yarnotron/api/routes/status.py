@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from yarnotron.core.config import Settings, get_settings
 from yarnotron.models.status import ChildStatus, ModelsStatus, StatusResponse
 from yarnotron.services.ollama import OllamaClient, OllamaUnavailableError, get_ollama_client
+from yarnotron.services.shutdown import get_shutdown
 from yarnotron.services.story_store import StoryRepository, get_story_repository
 
 router = APIRouter(tags=["status"])
@@ -30,6 +31,7 @@ async def get_status(
         environment=settings.environment,
         auth_required=settings.api_token is not None,
         strike_limit=settings.safety_strike_limit,
+        shutting_down=get_shutdown().draining,
         stories=summary.stories,
         models=models,
         child=ChildStatus(
