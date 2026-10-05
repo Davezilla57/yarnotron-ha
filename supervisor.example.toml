@@ -1,0 +1,64 @@
+# Yarnotron Mac supervisor. Copy to ~/.yarnotron-supervisor/supervisor.toml and edit.
+# Every path below must be absolute: launchd gives programs almost no PATH.
+
+[supervisor]
+host = "0.0.0.0"          # Home Assistant reaches this from another machine
+port = 8990
+token = "CHANGE-ME"       # paste the same value into the Yarnotron integration options
+state_dir = "~/.yarnotron-supervisor"   # logs live in <state_dir>/logs/<service>.log
+
+# ---- 1. Ollama: the model server -------------------------------------------
+[[service]]
+name = "ollama"
+label = "Ollama"
+start = ["/opt/homebrew/bin/ollama", "serve"]
+port = 11434
+process_match = "ollama"
+stop_timeout = 20
+# "leave" keeps Ollama running on shutdown (use it if you also use it for other things,
+# or if you run the Ollama menu-bar app, which restarts the server when it is stopped).
+stop_policy = "term"
+[service.probe]
+type = "http"
+url = "http://127.0.0.1:11434/api/tags"
+
+# ---- 2. Wyoming Whisper: speech to text ------------------------------------
+[[service]]
+name = "whisper"
+label = "Whisper speech-to-text"
+start = [
+  "/Users/YOU/wyoming-faster-whisper/.venv/bin/python", "-m", "wyoming_faster_whisper",
+  "--model", "small", "--language", "en",
+  "--uri", "tcp://0.0.0.0:10300",
+  "--data-dir", "/Users/YOU/wyoming-faster-whisper/data",
+  "--download-dir", "/Users/YOU/wyoming-faster-whisper/data",
+]
+port = 10300
+process_match = "wyoming_faster_whisper"
+start_timeout = 120       # the first start downloads the model
+[service.probe]
+type = "wyoming"
+port = 10300
+
+# ---- 3. Yarnotron backend ---------------------------------------------------
+[[service]]
+name = "yarnotron"
+label = "Yarnotron backend"
+start = ["/opt/homebrew/bin/uv", "run", "uvicorn", "yarnotron.main:app", "--host", "0.0.0.0", "--port", "8989"]
+cwd = "/Users/YOU/yarnotron"
+env = { PYTHONPATH = "src" }
+port = 8989
+depends_on = ["ollama"]
+process_match = "uvicorn"
+start_timeout = 90
+stop_timeout = 20
+[service.probe]
+type = "http"
+url = "http://127.0.0.1:8989/health"
+# On shutdown, ask the backend to finish running turns, end open sessions and save
+# before it is stopped. Use the same token as YARNOTRON_API_TOKEN (delete the
+# bearer_token line if you do not use one).
+[service.pre_stop]
+url = "http://127.0.0.1:8989/v1/system/prepare-shutdown?timeout=30"
+timeout = 45
+bearer_token = "YOUR-YARNOTRON-API-TOKEN"
