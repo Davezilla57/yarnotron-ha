@@ -135,3 +135,28 @@ async def test_last_safety_event_sensor_has_no_transcript(
 async def test_polls_on_the_configured_interval(hass: HomeAssistant, setup) -> None:
     entry = await setup(scan_interval=90)
     assert entry.runtime_data.coordinator.update_interval == timedelta(seconds=90)
+
+
+async def test_parent_note_that_quotes_the_child_stays_out_of_attributes(
+    hass: HomeAssistant, backend, setup
+) -> None:
+    """The backend's strike-limit note ends with what the child said."""
+    fake, _ = backend
+    quote = "Last one: I want to see the scary thing"
+    await setup()
+    fake.add_event("e1", categories=["strike_limit_reached"], parent_note=quote)
+    await _poll(hass)
+    for entity in ("event.yarnotron_safety_alert", "sensor.yarnotron_last_safety_event"):
+        state = hass.states.get(entity)
+        assert state is not None and quote not in str(state.attributes)
+        assert "parent_note" not in state.attributes
+
+
+async def test_parent_note_comes_with_transcripts_when_opted_in(
+    hass: HomeAssistant, backend, setup
+) -> None:
+    fake, _ = backend
+    await setup(include_transcripts=True)
+    fake.add_event("e1", parent_note="the note")
+    await _poll(hass)
+    assert hass.states.get("event.yarnotron_safety_alert").attributes["parent_note"] == "the note"

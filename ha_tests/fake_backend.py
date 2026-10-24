@@ -82,6 +82,7 @@ class FakeBackend:
         child_id: str = "local_child",
         created_at: datetime | None = None,
         transcript: str = "something scary",
+        parent_note: str = "A note for parents",
     ) -> dict[str, Any]:
         event = {
             "id": event_id,
@@ -92,7 +93,7 @@ class FakeBackend:
                 "action": action,
                 "severity": "medium",
                 "categories": categories or [],
-                "parent_note": "A note for parents",
+                "parent_note": parent_note,
             },
             "transcript_excerpt": transcript,
             "counted_as_strike": True,

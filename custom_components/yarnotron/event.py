@@ -68,16 +68,18 @@ class SafetyAlertEvent(YarnotronEntity, EventEntity):
             "action": safety.get("action"),
             "severity": safety.get("severity"),
             "categories": safety.get("categories") or [],
-            "parent_note": safety.get("parent_note"),
             "story_id": event.get("story_id"),
             "session_id": event.get("session_id"),
             "counted_as_strike": bool(event.get("counted_as_strike")),
             "created_at": event.get("created_at"),
         }
-        # Off by default: this attribute is recorded in Home Assistant's
-        # database and visible on any dashboard that shows the entity.
+        # Off by default: these are recorded in Home Assistant's database and
+        # visible on any dashboard that shows the entity. The backend's parent
+        # note can quote the child (a strike-limit note ends with what they
+        # said), so it is treated as transcript, not as metadata.
         if self._entry.options.get(CONF_INCLUDE_TRANSCRIPTS, DEFAULT_INCLUDE_TRANSCRIPTS):
             attributes["transcript"] = event.get("transcript_excerpt")
+            attributes["parent_note"] = safety.get("parent_note")
         self._trigger_event(alert_type(event), attributes)
         self.async_write_ha_state()
 

@@ -52,7 +52,6 @@ def _last_event_attrs(data: YarnotronData) -> dict[str, Any]:
         "action": safety.get("action"),
         "severity": safety.get("severity"),
         "categories": safety.get("categories") or [],
-        "parent_note": safety.get("parent_note"),
         "reviewed": event.get("reviewed_at") is not None,
     }
 
