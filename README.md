@@ -13,6 +13,7 @@ the story brain with its safety review, strike lock and parent controls.
 - `Dockerfile`, `docker-compose.yml` - run the backend headless on the AI machine
 - `docs/yarnotron-ha-guide.html` - architecture, code changes, setup and user guide
 - `src/yarnotron/supervisor/`, `supervisor.example.toml` - Mac-side service so Home Assistant can launch, shut down and check the Mac's processes (`docs/mac-power-control.md`)
+- `integrations/hermes/` - Hermes parent/operator profile and stdio MCP server for Yarnotron (`docs/yarnotron-for-jeevus.md` describes the whole system for the Jeevus project)
 - `ha_tests/` - integration tests (`pip install -r requirements_test_ha.txt`, then `pytest ha_tests`)
 
 Set `YARNOTRON_API_TOKEN` on the backend whenever it is reachable from the

@@ -1,0 +1,38 @@
+# Merge into the yarnotron profile's config.yaml (see ../README.md).
+# Replace the path and the values. Hermes does not pass your shell environment to MCP servers, so
+# everything the server needs is listed here.
+mcp_servers:
+  yarnotron:
+    command: "python3"
+    args: ["/ABSOLUTE/PATH/TO/yarnotron_mcp.py"]
+    env:
+      YARNOTRON_URL: "http://192.168.1.20:8989"
+      YARNOTRON_API_TOKEN: "REPLACE_WITH_BACKEND_TOKEN"
+      YARNOTRON_CHILD_ID: "local_child"
+      # Preferred: go through Home Assistant so its voice agent and session lock stay correct.
+      HASS_URL: "http://homeassistant.local:8123"
+      HASS_TOKEN: "REPLACE_WITH_LONG_LIVED_TOKEN"
+      # Fallback when Home Assistant is not configured:
+      # YARNOTRON_SUPERVISOR_URL: "http://192.168.1.20:8990"
+      # YARNOTRON_SUPERVISOR_TOKEN: "REPLACE"
+      YARNOTRON_MCP_ACTOR: "hermes:yarnotron"
+      # Off unless you turn them on. See ../README.md before enabling.
+      YARNOTRON_MCP_ALLOW_FORCE: "0"
+      YARNOTRON_MCP_ALLOW_RELEASE: "0"
+      YARNOTRON_MCP_ALLOW_STORY_TEXT: "0"
+    # Launch can take minutes. Units are not stated in the Hermes docs I read; use a generous value.
+    timeout: 600
+    connect_timeout: 30
+    # Tools appear to the agent as mcp_yarnotron_<name>. List only what this profile should have.
+    tools:
+      include:
+        - status
+        - launch
+        - shutdown
+        - safety_events
+        - review_event
+        - list_stories
+        - digest
+        # Leave these out unless you also enable the matching ALLOW flag above:
+        # - release_event
+        # - story_text
