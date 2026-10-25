@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any
 
 from yarnotron.agent import code_messages
-from yarnotron.agent.editing_policy import StoryEditingPolicy
+from yarnotron.agent.editing_policy import StoryEditingPolicy, is_undo_request
 from yarnotron.agent.story_context import compile_story_context
 from yarnotron.core.timing import LatencyTimer
 from yarnotron.models.agent import AgentTurnRequest, TurnIntent, TutorNote
@@ -40,6 +40,7 @@ from yarnotron.models.safety import SafetyAction, SafetyDecision
 from yarnotron.models.story import Story, StoryPatch, StoryPatchOperation
 from yarnotron.services.incremental_json import SentenceAccumulator
 from yarnotron.services.ollama import OllamaClient, OllamaUnavailableError
+from yarnotron.services.pii import redact_contact_details
 from yarnotron.services.story_store import StoryRepository
 from yarnotron.agent.safety import SafetyReviewer
 
@@ -50,6 +51,7 @@ SentenceSink = Callable[[str], Awaitable[None]]
 
 _PATCH_TOOLS = {op.value for op in StoryPatchOperation}
 _NON_PATCH_TOOLS = {"undo_last_change", "note_interest", "request_picture", "add_tutor_note"}
+_PICTURE_WORDS = re.compile(r"\b(picture|image|draw|drawing|paint|painting|illustrat\w*)\b", re.IGNORECASE)
 _EXPLICIT_SCENE = re.compile(
     r"\b(add|make|create|write|put in|start)\b[^.?!]{0,30}\b(scene|chapter)\b", re.IGNORECASE
 )
@@ -211,6 +213,10 @@ def _clean_args(tool: dict[str, Any], args: object) -> dict[str, Any] | None:
             item = spec.get("items", {})
             limit = item.get("maxLength", 200)
             value = [str(v).strip()[:limit] for v in value if str(v).strip()][: spec.get("maxItems", 20)]
+        if isinstance(value, str):
+            # Defence in depth: the model never sees a removed address, but anything that looks like one is
+            # removed again before it can be saved.
+            value = redact_contact_details(value).text
         out[key] = value
     for key in schema.get("required", []):
         if key not in out or out[key] in ("", []):
@@ -246,9 +252,16 @@ def interpret_actions(
             continue
 
         if name == "undo_last_change":
-            result.undo = True
+            # Undo is the child's request, never the model's idea.
+            if is_undo_request(request.transcript):
+                result.undo = True
+            else:
+                result.refused.append("undo_last_change:not_requested")
         elif name == "request_picture":
-            result.picture = True
+            if _PICTURE_WORDS.search(request.transcript):
+                result.picture = True
+            else:
+                result.refused.append("request_picture:not_requested")
         elif name == "note_interest":
             if result.interest is None:
                 result.interest = (args["name"], bool(args.get("ambiguous")))
@@ -311,6 +324,12 @@ class TurnOutcome:
     model_text: str = ""
     scribe_failed: bool = False
     refused: list[str] = field(default_factory=list)
+
+
+def _known_ids(story: Story | None) -> set[str]:
+    if story is None:
+        return set()
+    return {c.id for c in story.characters} | {sc.id for sc in story.scenes} | {f.id for f in story.facts}
 
 
 def _drop_trailing_question(text: str) -> str:
@@ -522,7 +541,13 @@ class AgentEngine:
                 outcome.intent = TurnIntent.CREATE_IMAGE
                 replacement = code_messages.PICTURE_SAVED
             if scribe.patches and not scribe.undo:
-                reviewed = self._policy.review(scribe.patches, story, request.transcript, TurnIntent.CONTINUE_STORY)
+                known = _known_ids(story)
+                valid = [
+                    p for p in scribe.patches
+                    if "id" not in p.data or p.data["id"] in known
+                ]
+                outcome.refused += [f"{p.operation.value}:unknown_id" for p in scribe.patches if p not in valid]
+                reviewed = self._policy.review(valid, story, request.transcript, TurnIntent.CONTINUE_STORY)
                 patches = reviewed.patches
                 if patches:
                     outcome.intent = TurnIntent.EDIT_STORY

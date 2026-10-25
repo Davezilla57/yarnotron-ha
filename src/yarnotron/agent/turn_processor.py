@@ -606,7 +606,12 @@ class TurnProcessor:
         elif request.story_id is not None:
             with timer.measure("patch_apply"):
                 for patch in outcome.apply_patches:
-                    updated_story = await self._repository.apply_patch(request.story_id, patch)
+                    try:
+                        updated_story = await self._repository.apply_patch(request.story_id, patch)
+                    except (ValueError, KeyError):
+                        # A proposal that no longer fits the story is dropped; the turn still completes.
+                        logger.warning("dropped a scribe patch that could not be applied: %s", patch.operation.value)
+                        continue
                     applied.append(patch)
         timer.add_metadata(applied_patch_count=len(applied))
 
@@ -1108,7 +1113,12 @@ class TurnProcessor:
                 # The child has now confirmed, so clear the flag before applying
                 # or it would be skipped again and re-offered next turn.
                 confirmed = patch.model_copy(update={"child_confirmation_required": False})
-                updated_story = await self._repository.apply_patch(request.story_id, confirmed)
+                try:
+                    updated_story = await self._repository.apply_patch(request.story_id, confirmed)
+                except (ValueError, KeyError):
+                    # The target is gone (an earlier held change removed it). Skip it rather than failing the turn.
+                    logger.warning("dropped a confirmed patch whose target no longer exists: %s", patch.operation.value)
+                    continue
                 applied.append(confirmed)
         timer.add_metadata(confirmed_patch_count=len(applied))
 

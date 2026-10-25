@@ -1,6 +1,6 @@
 """Words that code says instead of the model. Fixed, short, and approved by a parent.
 
-DRAFT: both lines await parent approval. They must match `spec/agent.yaml` (tests check this).
+Both worded lines were approved by the parent on 2026-10-25. They must match `spec/agent.yaml` (tests check this).
 """
 
 WORRIED_CHILD_SCRIPT = (

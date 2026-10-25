@@ -44,7 +44,7 @@ guards:                     # all code, all before or after the model
     action: redact_then_continue                              # span replaced with a placeholder in everything downstream
     redact_in: [talker_input, scribe_input, memory_store, turn_log, parent_notes, deferred_review, steward_output]
     child_line: pii_not_kept                                  # fixed code message, then the story carries on
-    child_line_text: "I can't take or keep addresses or email addresses, but I can keep going with the story."   # DRAFT, awaiting parent approval
+    child_line_text: "I can't take or keep addresses or email addresses, but I can keep going with the story."   # approved by parent 2026-10-25
     never: [store_original, echo_back, ask_again]
     known_limit: "Home Assistant keeps its own copy of the transcript in its voice debug history; disable or limit it (T16)"
   input_keywords:
@@ -62,7 +62,7 @@ guards:                     # all code, all before or after the model
   worried_child:              # reviewer decision: fixed script, not model words
     trigger: [input_review_category_worried_child, alert_keywords]   # model-flagged categories: unsafe_at_home, secret_from_parent, stranger_contact, self_harm_intent
     action: speak_script_then_stop_story_and_raise_parent_event
-    script_text: "Thank you for telling me. That sounds like something a grown-up should know about, so please go and tell one now. I'm going to stop our story for a little while."   # DRAFT, awaiting parent approval
+    script_text: "Thank you for telling me. That sounds like something a grown-up should know about, so please go and tell one now. I'm going to stop our story for a little while."   # approved by parent 2026-10-25
 
 data:
   store: docker-volume:yarnotron-data
