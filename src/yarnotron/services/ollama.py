@@ -208,6 +208,45 @@ class OllamaClient:
             raise OllamaMalformedJsonError("Ollama returned JSON, but it was not an object.")
         yield StreamEvent(payload=parsed, stats=stats)
 
+    async def stream_text(
+        self,
+        prompt: str,
+        model: str | None = None,
+        *,
+        options: dict[str, Any] | None = None,
+        think: bool | None = False,
+    ) -> AsyncIterator[str]:
+        """Plain text deltas, no JSON wrapper. The agent engine's Talker speaks from this."""
+        request_options = self._base_options()
+        if options:
+            request_options.update(options)
+        request_json: dict[str, Any] = {
+            "model": model or self._settings.default_model,
+            "prompt": prompt,
+            "stream": True,
+            "options": request_options,
+        }
+        if think is not None:
+            request_json["think"] = think
+        url = f"{self._settings.ollama_base_url.rstrip('/')}/api/generate"
+        try:
+            async with self._ensure_client().stream("POST", url, json=request_json) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line.strip():
+                        continue
+                    chunk = json.loads(line)
+                    piece = str(chunk.get("response", ""))
+                    if piece:
+                        yield piece
+                    if chunk.get("done"):
+                        break
+        except (httpx.HTTPError, ValueError) as exc:
+            raise OllamaUnavailableError(
+                f"Ollama is unavailable at {self._settings.ollama_base_url}. "
+                "Start Ollama or update YARNOTRON_OLLAMA_BASE_URL."
+            ) from exc
+
     async def embed(self, text: str, model: str) -> list[float]:
         payload = await self._request(
             "POST",

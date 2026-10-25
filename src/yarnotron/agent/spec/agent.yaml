@@ -1,0 +1,82 @@
+# Yarnotron child agent definition (DRAFT v0.2, reviewer answers folded in). Not yet read by any code.
+# Shape follows the planned Jeevus agent manifest (T14) with a stricter tier for a child's data.
+name: yarnotron-child
+version: 0.2.0
+tier: T0-C                  # child data: local engines only, isolated store, no text outside the container
+runtime: yarnotron-backend  # lean loop inside the Yarnotron backend; engine flag YARNOTRON_ENGINE=classic|agent
+constitution: constitution.md
+
+models:                     # LiteLLM aliases on the child key only (t0-yarn-child)
+  talker: yarn-story        # streaming speech, no tools
+  scribe: yarn-story        # tool calls, async
+  gate:   yarn-safety       # sentence gate, output review, deferred input review
+  embed:  yarn-embed
+
+talker:
+  tools: none
+  stream: true
+  prompt_order: [constitution, story_state, memories, interests, child_utterance]   # stable prefix first = warm cache
+  reply_budget: {sentences: 2, chars: 110, max_tokens: 90}
+  thinking: off
+
+scribe:
+  tools_file: tools.schema.json
+  max_rounds: 3             # tool-call rounds per turn
+  time_budget_ms: 6000      # past this the turn commits nothing and the Talker's reply stands
+  input: [child_utterance, talker_reply, story_state]
+  commit: after_gate        # nothing is saved until the output review of the same turn has passed
+
+policy:                     # deterministic, enforced in tool code; the Scribe cannot override
+  confirm_required_for: [remove_character, remove_scene, remove_fact, replace_child_wording,
+                         update_unrequested, clear_text, ambiguous_target, scene_from_narration]
+  scene_from_narration: ask_child_first   # reviewer decision: offer the scene, add only on the child's yes; an explicit 'add a scene' request needs no question
+  confirmation_source: previous_turn_pending_action     # resolved by code from the child's next utterance
+  quote_check: "any text saved as story wording must be a substring of the child's utterance (normalized)"
+  duplicate_merge: {similarity: 0.86, contains_boost: 0.92}   # carried over from editing_policy.py
+  version_snapshot_before_commit: true
+  caps: {adds_per_turn: 3, text_chars_per_item: 1500, interests_per_turn: 1}
+  picture: {creates: pending_media_asset, approval: parent}
+
+guards:                     # all code, all before or after the model
+  personal_details:           # reviewer decision: addresses and email addresses are never taken or kept
+    detect: [email_address, street_address, phone_number]     # phone is an extra, remove if unwanted
+    when: before_any_model_call
+    action: redact_then_continue                              # span replaced with a placeholder in everything downstream
+    redact_in: [talker_input, scribe_input, memory_store, turn_log, parent_notes, deferred_review, steward_output]
+    child_line: pii_not_kept                                  # fixed code message, then the story carries on
+    child_line_text: "I can't take or keep addresses or email addresses, but I can keep going with the story."   # DRAFT, awaiting parent approval
+    never: [store_original, echo_back, ask_again]
+    known_limit: "Home Assistant keeps its own copy of the transcript in its voice debug history; disable or limit it (T16)"
+  input_keywords:
+    alert_terms: [suicide, "kill myself", "self harm", nude, sex, porn, explicit]     # stop turn, parent alert, never a strike
+    redirect_terms: [gore, torture, "graphic violence", drug, steal, bully]           # caution + strike
+    match: whole_words
+  strikes: {limit: 5, counts: redirect_only, on_limit: end_session_and_lock, release: parent}
+  sentence_gate:
+    first_sentence: {mode: strict, checks: [keyword_rules, personal_details, fast_classifier], target_ms: 200}
+    later_sentences: {mode: pipelined, checks: [model_review], hold_on_fail: true}
+    on_block: replace_with_code_message
+  output_review: {model: gate, scope: [reply_text, proposed_scribe_actions], on_block: discard_actions}
+  deferred_input_review: {model: gate, independent_reviewer: preferred, on_flag: [parent_event, held_back_content]}
+  code_messages: [worried_child, pii_not_kept, redirect, stop, strike_end]    # fixed scripts the Talker repeats verbatim
+  worried_child:              # reviewer decision: fixed script, not model words
+    trigger: [input_review_category_worried_child, alert_keywords]   # model-flagged categories: unsafe_at_home, secret_from_parent, stranger_contact, self_harm_intent
+    action: speak_script_then_stop_story_and_raise_parent_event
+    script_text: "Thank you for telling me. That sounds like something a grown-up should know about, so please go and tell one now. I'm going to stop our story for a little while."   # DRAFT, awaiting parent approval
+
+data:
+  store: docker-volume:yarnotron-data
+  text_to_home_assistant: false
+  logs_contain_child_text: false
+  steward_sees: counts_only
+
+latency:
+  first_sentence_ms: {p50: 900, p95: 1500}
+  full_turn_ms_warm_baseline_classic: 3900
+
+verify:                     # release gates, see eval/README.md
+  hazards: eval/hazards.json
+  injection: eval/injection.json
+  scenarios: eval/scenarios.json
+  corpus_replay: yarnotron-ha:bench/corpus.json
+  properties: eval/properties.md

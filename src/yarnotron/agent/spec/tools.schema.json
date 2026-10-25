@@ -1,0 +1,319 @@
+{
+ "$comment": "Scribe tools (DRAFT v0.2). Each maps to a story patch operation in yarnotron-ha models/story.py. Tools record a PROPOSED action and return a provisional result; commit happens after the output review. 'class' is enforced in code.",
+ "tools": [
+  {
+   "name": "add_character",
+   "class": "auto",
+   "quote": "optional",
+   "description": "Add a character the child introduced. Check the story state first; if a similar name exists, use update_character.",
+   "parameters": {
+    "type": "object",
+    "required": [
+     "name"
+    ],
+    "properties": {
+     "name": {
+      "type": "string",
+      "maxLength": 80
+     },
+     "role": {
+      "type": "string",
+      "maxLength": 80
+     },
+     "traits": {
+      "type": "array",
+      "items": {
+       "type": "string",
+       "maxLength": 40
+      },
+      "maxItems": 8
+     },
+     "notes": {
+      "type": "string",
+      "maxLength": 400
+     }
+    }
+   }
+  },
+  {
+   "name": "add_scene",
+   "class": "ask_unless_requested",
+   "quote": "required_for_draft_text",
+   "description": "Add a scene. If the child asked for a scene in words, call this directly. If you only think the narration deserves one, do not call this: ask the child first and call it only after their yes. draft_text, if given, must be the child's own words.",
+   "parameters": {
+    "type": "object",
+    "required": [
+     "title",
+     "summary"
+    ],
+    "properties": {
+     "title": {
+      "type": "string",
+      "maxLength": 120
+     },
+     "summary": {
+      "type": "string",
+      "maxLength": 400
+     },
+     "draft_text": {
+      "type": "string",
+      "maxLength": 1500,
+      "description": "verbatim from the child's utterance"
+     },
+     "sequence": {
+      "type": "integer",
+      "minimum": 1
+     }
+    }
+   }
+  },
+  {
+   "name": "add_fact",
+   "class": "auto",
+   "description": "Record a durable fact about the story world the child stated.",
+   "parameters": {
+    "type": "object",
+    "required": [
+     "text"
+    ],
+    "properties": {
+     "text": {
+      "type": "string",
+      "maxLength": 300
+     }
+    }
+   }
+  },
+  {
+   "name": "update_title",
+   "class": "confirm_unless_explicit",
+   "parameters": {
+    "type": "object",
+    "required": [
+     "title"
+    ],
+    "properties": {
+     "title": {
+      "type": "string",
+      "maxLength": 120
+     }
+    }
+   }
+  },
+  {
+   "name": "update_synopsis",
+   "class": "confirm_unless_explicit",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "synopsis": {
+      "type": "string",
+      "maxLength": 600
+     }
+    }
+   }
+  },
+  {
+   "name": "update_character",
+   "class": "confirm_unless_explicit",
+   "parameters": {
+    "type": "object",
+    "required": [
+     "id"
+    ],
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string",
+      "maxLength": 80
+     },
+     "role": {
+      "type": "string",
+      "maxLength": 80
+     },
+     "traits": {
+      "type": "array",
+      "items": {
+       "type": "string",
+       "maxLength": 40
+      },
+      "maxItems": 8
+     },
+     "notes": {
+      "type": "string",
+      "maxLength": 400
+     }
+    }
+   }
+  },
+  {
+   "name": "update_scene",
+   "class": "confirm_unless_explicit",
+   "quote": "required_for_draft_text",
+   "parameters": {
+    "type": "object",
+    "required": [
+     "id"
+    ],
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "title": {
+      "type": "string",
+      "maxLength": 120
+     },
+     "summary": {
+      "type": "string",
+      "maxLength": 400
+     },
+     "draft_text": {
+      "type": "string",
+      "maxLength": 1500
+     },
+     "sequence": {
+      "type": "integer",
+      "minimum": 1
+     }
+    }
+   }
+  },
+  {
+   "name": "remove_character",
+   "class": "confirm",
+   "parameters": {
+    "type": "object",
+    "required": [
+     "id"
+    ],
+    "properties": {
+     "id": {
+      "type": "string"
+     }
+    }
+   }
+  },
+  {
+   "name": "remove_scene",
+   "class": "confirm",
+   "parameters": {
+    "type": "object",
+    "required": [
+     "id"
+    ],
+    "properties": {
+     "id": {
+      "type": "string"
+     }
+    }
+   }
+  },
+  {
+   "name": "remove_fact",
+   "class": "confirm",
+   "parameters": {
+    "type": "object",
+    "required": [
+     "id"
+    ],
+    "properties": {
+     "id": {
+      "type": "string"
+     }
+    }
+   }
+  },
+  {
+   "name": "undo_last_change",
+   "class": "auto",
+   "description": "Undo the last applied change. Use when the child asks to undo or go back; invent no other change.",
+   "parameters": {
+    "type": "object",
+    "properties": {}
+   }
+  },
+  {
+   "name": "note_interest",
+   "class": "auto",
+   "per_turn_max": 1,
+   "description": "The child named something they love from outside the story. Use their words for it. Set ambiguous when you cannot tell story content from a liking.",
+   "parameters": {
+    "type": "object",
+    "required": [
+     "name"
+    ],
+    "properties": {
+     "name": {
+      "type": "string",
+      "maxLength": 80
+     },
+     "ambiguous": {
+      "type": "boolean"
+     }
+    }
+   }
+  },
+  {
+   "name": "request_picture",
+   "class": "parent_approval",
+   "description": "Create a pending picture request for a parent to approve. It never produces a picture by itself.",
+   "parameters": {
+    "type": "object",
+    "required": [
+     "description"
+    ],
+    "properties": {
+     "description": {
+      "type": "string",
+      "maxLength": 300
+     }
+    }
+   }
+  },
+  {
+   "name": "add_tutor_note",
+   "class": "auto",
+   "description": "A short note for the parent dashboard (definition given, grammar help given). Never include personal details.",
+   "parameters": {
+    "type": "object",
+    "required": [
+     "kind",
+     "text"
+    ],
+    "properties": {
+     "kind": {
+      "enum": [
+       "definition",
+       "grammar",
+       "spelling",
+       "interest",
+       "other"
+      ]
+     },
+     "text": {
+      "type": "string",
+      "maxLength": 200
+     }
+    }
+   }
+  }
+ ],
+ "classes": {
+  "auto": "applied at commit if the output review passes",
+  "confirm_unless_explicit": "applied only if the child's utterance used an explicit edit word (change, rename, replace, update) or intent was an edit; otherwise held for the child's yes",
+  "confirm": "always held; the child's next utterance must be a clear yes before code applies it; a no discards it",
+  "parent_approval": "creates a pending media asset; only a parent can approve",
+  "ask_unless_requested": "applied at commit only if the child's utterance asked for a scene in words; otherwise held as a pending offer and applied by code on the child's next-turn yes"
+ },
+ "not_available_to_the_agent": [
+  "delete_story",
+  "end_session",
+  "release_lock",
+  "approve_media",
+  "read_other_children",
+  "network",
+  "files"
+ ]
+}

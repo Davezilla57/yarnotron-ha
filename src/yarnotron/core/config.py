@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     # *_model settings below are alias or model names on that server and
     # `llm_base_url` (including /v1) is required.
     llm_backend: Literal["ollama", "openai"] = "ollama"
+    # "classic" is the turn pipeline; "agent" is the Talker/Scribe engine (see agent/agent_engine.py).
+    engine: Literal["classic", "agent"] = "classic"
+    agent_scribe_budget_seconds: float = Field(default=6.0, gt=0)
     llm_base_url: str | None = None
     llm_api_key: str | None = None
     # Ask the server for a JSON object (response_format). Off by default: the

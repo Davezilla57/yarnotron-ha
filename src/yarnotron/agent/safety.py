@@ -48,6 +48,8 @@ class SafetyClassifier:
         "explicit",
     }
 
+    _self_harm_terms = {"suicide", "kill myself", "self harm"}
+
     # "hate" is deliberately absent. Children say "I hate that name" and "I hate
     # broccoli" constantly, and as a bare word it carried almost no signal about
     # hate speech while costing a caution and a strike every time. The model
@@ -66,10 +68,13 @@ class SafetyClassifier:
         normalized = transcript.lower()
 
         if _contains_term(normalized, self._alert_terms):
+            categories = ["child_safety_review"]
+            if _contains_term(normalized, self._self_harm_terms):
+                categories.append("self_harm")
             return SafetyDecision(
                 action=SafetyAction.ALERT_PARENT,
                 severity=SafetySeverity.ALERT,
-                categories=["child_safety_review"],
+                categories=categories,
                 child_message=(
                     "I can't help make that kind of story. I'm going to save a note "
                     "for your parent because this is something an adult should know about."

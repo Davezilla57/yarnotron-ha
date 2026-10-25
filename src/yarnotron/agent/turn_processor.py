@@ -1,4 +1,5 @@
 import asyncio
+import contextvars
 import logging
 import re
 import time
@@ -8,6 +9,8 @@ from typing import TypeAlias
 from fastapi import Depends
 from pydantic import BaseModel, ValidationError
 
+from yarnotron.agent import code_messages
+from yarnotron.agent.agent_engine import AgentEngine
 from yarnotron.agent.editing_policy import StoryEditingPolicy, StoryEditingPolicyResult
 from yarnotron.agent.prompts import build_story_turn_prompt
 from yarnotron.agent.router import IntentRouter
@@ -28,6 +31,7 @@ from yarnotron.models.safety import SafetyAction, SafetyDecision, SafetySeverity
 from yarnotron.models.story import CreateStoryRequest, Story, StoryPatch
 from yarnotron.services.incremental_json import SentenceAccumulator
 from yarnotron.services.interests import InterestEnricher, schedule_enrichment
+from yarnotron.services.pii import PII_NOT_KEPT_LINE, redact_contact_details
 from yarnotron.services.memory import (
     Embedder,
     StoryMemoryBuilder,
@@ -45,6 +49,12 @@ logger = logging.getLogger(__name__)
 # Called with each safety-gated sentence as soon as it is ready to speak.
 SentenceSink: TypeAlias = Callable[[str], Awaitable[None]]
 
+# Turns of a story during which a scene is not offered again after one was offered or added.
+_SCENE_OFFER_COOLDOWN_TURNS = 4
+
+# The line the child hears when contact details were removed from what they said. Set per turn.
+_PII_LEAD: contextvars.ContextVar[str | None] = contextvars.ContextVar("pii_lead", default=None)
+
 
 class TurnProcessor:
     def __init__(
@@ -58,6 +68,7 @@ class TurnProcessor:
         editing_policy: StoryEditingPolicy | None = None,
         interest_enricher: InterestEnricher | None = None,
         strike_limit: int = 5,
+        engine: AgentEngine | None = None,
     ) -> None:
         self._ollama = ollama
         self._repository = repository
@@ -68,6 +79,8 @@ class TurnProcessor:
         self._editing_policy = editing_policy or StoryEditingPolicy()
         self._interest_enricher = interest_enricher
         self._strike_limit = strike_limit
+        # None keeps the classic pipeline. See agent/agent_engine.py.
+        self._engine = engine
         # Holds the background interest lookups. See services/interests.
         self._interest_tasks: set[asyncio.Task] = set()
         # Deferred input reviews. See _schedule_input_review.
@@ -96,6 +109,15 @@ class TurnProcessor:
             session_id=request.session_id,
             device_id=request.device_id,
         )
+        # Contact details are removed before anything else sees the words: no model call, no storage, no parent
+        # note ever holds them. The child is told once, and the story carries on.
+        pii = redact_contact_details(request.transcript)
+        pii_line: str | None = None
+        if pii.found:
+            request = request.model_copy(update={"transcript": pii.text})
+            pii_line = PII_NOT_KEPT_LINE
+            timer.add_metadata(pii_removed=",".join(pii.kinds))
+        lead_token = _PII_LEAD.set(pii_line)
         try:
             # Before the safety model call, which is ~900 ms: a session that has
             # already run out of strikes should cost nothing to turn away.
@@ -168,6 +190,8 @@ class TurnProcessor:
             )
             if stopped is not None:
                 return stopped
+            # What is spoken and saved in front of the reply. A strike is still spent on `caution` alone.
+            spoken_lead = " ".join(part for part in (pii_line, caution) if part) or None
 
             # A destructive edit asked for confirmation on the previous turn and
             # was deliberately not applied. Resolve it before anything else --
@@ -205,7 +229,7 @@ class TurnProcessor:
                 response = _picked_story_response(intent, safety, picked_story)
                 return await self._persist_turn(request, response, timer=timer)
 
-            if intent == TurnIntent.UNKNOWN:
+            if intent == TurnIntent.UNKNOWN and self._engine is None:
                 response = AgentTurnResponse(
                     intent=intent,
                     response_text=(
@@ -222,10 +246,10 @@ class TurnProcessor:
                 )
                 return await self._persist_turn(request, response, timer=timer)
 
-            if intent == TurnIntent.UNDO_LAST_CHANGE:
+            if intent == TurnIntent.UNDO_LAST_CHANGE and self._engine is None:
                 return await self._undo_last_change(request, safety, story, timer=timer)
 
-            if intent == TurnIntent.CREATE_IMAGE:
+            if intent == TurnIntent.CREATE_IMAGE and self._engine is None:
                 return await self._request_media_asset(request, safety, timer=timer)
 
             if request.story_id is None:
@@ -291,6 +315,23 @@ class TurnProcessor:
                 else None
             )
 
+            if self._engine is not None:
+                return await self._agent_story_turn(
+                    request,
+                    safety,
+                    story,
+                    spoken_lead=spoken_lead,
+                    caution=caution,
+                    recap=recap,
+                    pending_recap=pending_recap,
+                    story_selection=story_selection,
+                    memories=relevant_memories,
+                    interests=interests,
+                    on_sentence=on_sentence,
+                    parent_released=parent_released,
+                    timer=timer,
+                )
+
             with timer.measure("prompt_build"):
                 prompt = build_story_turn_prompt(
                     request,
@@ -308,7 +349,7 @@ class TurnProcessor:
                         request,
                         on_sentence,
                         timer=timer,
-                        prefix=_spoken_prefix(caution, recap, story_selection),
+                        prefix=_spoken_prefix(spoken_lead, recap, story_selection),
                     )
             if recap is not None:
                 # Said by now on the streaming path, and in the saved text on
@@ -333,7 +374,7 @@ class TurnProcessor:
                 # Same order the child heard it in: caution, story intro, recap,
                 # then the reply. Applied outermost-last so caution leads.
                 response_text = _with_recap(response_text, recap)
-                response_text = _with_caution(response_text, caution)
+                response_text = _with_caution(response_text, spoken_lead)
             timer.add_metadata(proposed_patch_count=len(editing_result.patches))
 
             # An outside interest the child mentioned. When the model could not
@@ -378,7 +419,7 @@ class TurnProcessor:
             if output_safety.action in _STOP_ACTIONS:
                 response = AgentTurnResponse(
                     intent=intent,
-                    response_text=_safety_stop_message(output_safety),
+                    response_text=self._stop_message(output_safety),
                     safety=safety,
                     retrieved_memory_ids=[memory.id for memory in relevant_memories],
                 )
@@ -423,7 +464,193 @@ class TurnProcessor:
                 request, response, timer=timer, strike=caution is not None
             )
         finally:
+            _PII_LEAD.reset(lead_token)
             timer.log()
+
+    def _stop_message(self, decision: SafetyDecision) -> str:
+        """The stop line. With the agent engine a worried child hears the fixed, approved script."""
+        if self._engine is not None and _is_worried_child(decision):
+            return code_messages.WORRIED_CHILD_SCRIPT
+        return _safety_stop_message(decision)
+
+    async def _agent_story_turn(
+        self,
+        request: AgentTurnRequest,
+        safety: SafetyDecision,
+        story: Story | None,
+        *,
+        spoken_lead: str | None,
+        caution: str | None,
+        recap: str | None,
+        pending_recap: SafetyEvent | None,
+        story_selection: "_StorySelection",
+        memories: list,
+        interests: list[ChildInterest],
+        on_sentence: SentenceSink | None,
+        parent_released: bool,
+        timer: LatencyTimer,
+    ) -> AgentTurnResponse:
+        """One story turn through the agent engine. Writes happen only after the output review passes."""
+        assert self._engine is not None
+        streamed = 0
+
+        async def sink(sentence: str) -> None:
+            nonlocal streamed
+            if on_sentence is not None:
+                await on_sentence(sentence)
+                streamed += 1
+
+        async def say(line: str) -> None:
+            # A line the child has not heard yet. If nothing streamed, the final text is spoken instead.
+            if streamed:
+                await sink(line)
+
+        memory_ids = [memory.id for memory in memories]
+        prefix = _spoken_prefix(spoken_lead, recap, story_selection)
+        # No scene offer if a scene was offered or added in the last few turns of this story.
+        recent = [
+            turn
+            for turn in await self._repository.list_conversation_turns(limit=10)
+            if turn.story_id == request.story_id
+            and (request.session_id is None or turn.session_id == request.session_id)
+        ][:_SCENE_OFFER_COOLDOWN_TURNS]
+        allow_scene_offer = not any(
+            patch.operation.value == "add_scene" for turn in recent for patch in turn.story_patches
+        )
+        with timer.measure("agent_engine"):
+            outcome = await self._engine.story_turn(
+                request,
+                story,
+                memories,
+                interests,
+                sink,
+                prefix=prefix,
+                timer=timer,
+                allow_scene_offer=allow_scene_offer,
+            )
+        if recap is not None:
+            with timer.measure("recap_mark"):
+                await self._repository.mark_safety_event_recapped(pending_recap.id)
+            timer.add_metadata(released_recap_delivered=True)
+        timer.add_metadata(
+            proposed_patch_count=len(outcome.patches),
+            scribe_refused=len(outcome.refused),
+            scribe_failed=outcome.scribe_failed,
+        )
+
+        # The gate vetoed a sentence: what was already said stands, the rest is dropped, nothing is saved.
+        if outcome.vetoed is not None:
+            safety = combine_safety_decisions(safety, outcome.vetoed)
+            message = (
+                self._stop_message(outcome.vetoed)
+                if outcome.vetoed.action in _STOP_ACTIONS
+                else outcome.vetoed.child_message
+                or "Let's steer that in a safer direction and keep the story adventurous."
+            )
+            await say(message)
+            response = AgentTurnResponse(
+                intent=outcome.intent,
+                response_text=message,
+                safety=safety,
+                retrieved_memory_ids=memory_ids,
+            )
+            return await self._persist_turn(request, response, timer=timer)
+
+        with timer.measure("output_safety"):
+            output_safety = await self._safety.review_assistant_output(
+                transcript=request.transcript,
+                response_text=outcome.model_text,
+                story_patches=outcome.patches,
+            )
+        safety = combine_safety_decisions(safety, output_safety)
+        if output_safety.action in _STOP_ACTIONS or output_safety.action == SafetyAction.REDIRECT:
+            message = (
+                self._stop_message(output_safety)
+                if output_safety.action in _STOP_ACTIONS
+                else output_safety.child_message
+                or "Let's steer that in a safer direction and keep the story adventurous."
+            )
+            await say(message)
+            response = AgentTurnResponse(
+                intent=outcome.intent,
+                response_text=message,
+                safety=safety,
+                retrieved_memory_ids=memory_ids,
+            )
+            return await self._persist_turn(request, response, timer=timer)
+
+        # Passed. Only now does anything change.
+        reply = outcome.reply_text
+        updated_story = story
+        applied: list[StoryPatch] = []
+        media_ids: list[str] = []
+        notes = list(outcome.tutor_notes)
+
+        if outcome.undo and request.story_id is not None:
+            with timer.measure("version_lookup"):
+                versions = await self._repository.list_versions(request.story_id)
+            if versions:
+                with timer.measure("version_restore"):
+                    restored = await self._repository.restore_version(request.story_id, versions[0].id)
+                updated_story = restored.restored_story
+                line = code_messages.UNDO_DONE
+                notes.append(TutorNote(kind="editing", text="Explicit undo restored the most recent saved story version."))
+            else:
+                line = code_messages.UNDO_NOTHING
+            await sink(line)
+            reply = f"{reply} {line}".strip()
+        elif outcome.undo:
+            line = "I can help with that once we have a story open. Tell me the story title you want to open."
+            await sink(line)
+            reply = f"{reply} {line}".strip()
+        elif request.story_id is not None:
+            with timer.measure("patch_apply"):
+                for patch in outcome.apply_patches:
+                    updated_story = await self._repository.apply_patch(request.story_id, patch)
+                    applied.append(patch)
+        timer.add_metadata(applied_patch_count=len(applied))
+
+        if outcome.interest is not None and not outcome.undo:
+            name, ambiguous = outcome.interest
+            if ambiguous:
+                notes.append(TutorNote(kind=_INTEREST_CLARIFICATION, text=name))
+                timer.add_metadata(interest_clarification=name)
+            else:
+                with timer.measure("interest_record"):
+                    await self._record_interest(request.child_id, name)
+                timer.add_metadata(interest_recorded=name)
+
+        if outcome.picture:
+            notes.append(
+                TutorNote(kind="media", text="Image generation request was saved for parent approval before generation.")
+            )
+
+        response = AgentTurnResponse(
+            intent=outcome.intent,
+            response_text=reply or _fallback_response(outcome.intent),
+            safety=safety,
+            story_patches=outcome.patches if not outcome.undo else [],
+            applied_story_patches=applied,
+            updated_story=updated_story,
+            tutor_notes=notes or _build_tutor_notes(request.transcript, outcome.intent),
+            retrieved_memory_ids=memory_ids,
+        )
+        response = await self._persist_turn(request, response, timer=timer, strike=caution is not None)
+        if outcome.picture:
+            with timer.measure("media_asset_create"):
+                asset = await self._repository.create_media_asset(
+                    CreateMediaAssetRequest(
+                        prompt=request.transcript,
+                        child_id=request.child_id,
+                        story_id=request.story_id,
+                        session_id=request.session_id,
+                        conversation_turn_id=response.turn_id,
+                    ),
+                    safety=safety,
+                )
+            media_ids = [asset.id]
+            response = response.model_copy(update={"media_asset_ids": media_ids})
+        return response
 
     async def _list_available_stories(
         self,
@@ -661,7 +888,7 @@ class TurnProcessor:
         if safety.action in _STOP_ACTIONS:
             response = AgentTurnResponse(
                 intent=intent,
-                response_text=_safety_stop_message(safety),
+                response_text=self._stop_message(safety),
                 safety=safety,
             )
             return await self._persist_turn(request, response, timer=timer), None
@@ -1017,6 +1244,10 @@ class TurnProcessor:
         # Stamped in one place so every path -- including the early returns --
         # tells the caller which session to send the next turn to.
         response = response.model_copy(update={"session_id": request.session_id})
+        # Contact details were removed from this turn: the child hears the not-kept line in front of the reply.
+        lead = _PII_LEAD.get()
+        if lead and lead not in response.response_text:
+            response = response.model_copy(update={"response_text": f"{lead} {response.response_text}".strip()})
         turn = ConversationTurn(
             id=response.turn_id,
             child_id=request.child_id,
@@ -1276,6 +1507,12 @@ def _safety_stop_message(decision: SafetyDecision) -> str:
         "That set off a safety alert, so I stopped there and told a grown-up. "
         "Tell me a different idea and we can keep going."
     )
+
+
+def _is_worried_child(decision: SafetyDecision) -> bool:
+    """Self-harm or a child disclosing something unsafe: the fixed script, never the model's words."""
+    text = " ".join(decision.categories).casefold()
+    return any(marker in text for marker in ("self_harm", "self-harm", "suicide", "worried_child"))
 
 
 def _session_strikes(session: StorySession | None) -> int:
@@ -1646,7 +1883,13 @@ def get_turn_processor(
     safety: SafetyReviewer = Depends(get_safety_reviewer),
     settings: Settings = Depends(get_settings),
 ) -> TurnProcessor:
+    engine = (
+        AgentEngine(llm=ollama, safety=safety, scribe_budget_seconds=settings.agent_scribe_budget_seconds)
+        if settings.engine == "agent"
+        else None
+    )
     return TurnProcessor(
+        engine=engine,
         ollama=ollama,
         repository=repository,
         embedder=embedder,

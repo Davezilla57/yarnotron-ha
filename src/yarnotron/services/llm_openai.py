@@ -227,6 +227,38 @@ class OpenAICompatClient(OllamaClient):
 
         yield StreamEvent(payload=_parse_object("".join(chunks).strip()), stats=stats)
 
+    async def stream_text(
+        self,
+        prompt: str,
+        model: str | None = None,
+        *,
+        options: dict[str, Any] | None = None,
+        think: bool | None = False,
+    ) -> AsyncIterator[str]:
+        request_options = self._base_options()
+        if options:
+            request_options.update(options)
+        body = self._chat_body(prompt, model, request_options, think, stream=True, json_mode=False)
+        try:
+            async with self._ensure_client().stream(
+                "POST", f"{self._base_url}/chat/completions", json=body, headers=self._headers()
+            ) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    line = line.strip()
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[len("data:") :].strip()
+                    if data == "[DONE]":
+                        break
+                    chunk = json.loads(data)
+                    for choice in chunk.get("choices") or []:
+                        piece = ((choice.get("delta") or {}).get("content")) or ""
+                        if piece:
+                            yield piece
+        except (httpx.HTTPError, ValueError) as exc:
+            raise self._unavailable(exc) from exc
+
     async def embed(self, text: str, model: str) -> list[float]:
         payload = await self._request(
             "POST", "/embeddings", json={"model": model, "input": text}
