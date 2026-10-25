@@ -34,16 +34,50 @@ class StoryMemoryBuilder:
         )
 
 
+def _with_prefix(prefix: str, text: str) -> str:
+    return f"{prefix.strip()} {text}" if prefix.strip() else text
+
+
 class OllamaEmbedder:
+    """Embeds through whichever model server is configured (Ollama or OpenAI-compatible).
+
+    `embed` is the passage form. Models that distinguish a search query from a
+    stored passage get their prefix from the two methods below; with no prefix
+    configured all three are identical.
+    """
+
     def __init__(self, settings: Settings, ollama: OllamaClient) -> None:
         self._settings = settings
         self._ollama = ollama
 
     async def embed(self, text: str) -> list[float]:
+        return await self.embed_document(text)
+
+    async def embed_document(self, text: str) -> list[float]:
+        return await self._embed(text, self._settings.embedding_document_prefix)
+
+    async def embed_query(self, text: str) -> list[float]:
+        return await self._embed(text, self._settings.embedding_query_prefix)
+
+    async def _embed(self, text: str, prefix: str) -> list[float]:
         if self._settings.embedding_model:
-            embedding = await self._ollama.embed(text, self._settings.embedding_model)
+            embedding = await self._ollama.embed(
+                _with_prefix(prefix, text), self._settings.embedding_model
+            )
             return _fit_dimensions(embedding, self._settings.embedding_dimensions)
         return deterministic_embedding(text, self._settings.embedding_dimensions)
+
+
+async def embed_query(embedder: Embedder, text: str) -> list[float]:
+    """Embed `text` as a search query; falls back to plain `embed` for simple embedders."""
+    method = getattr(embedder, "embed_query", None)
+    return await (method(text) if method is not None else embedder.embed(text))
+
+
+async def embed_document(embedder: Embedder, text: str) -> list[float]:
+    """Embed `text` as a stored passage; falls back to plain `embed` for simple embedders."""
+    method = getattr(embedder, "embed_document", None)
+    return await (method(text) if method is not None else embedder.embed(text))
 
 
 def deterministic_embedding(text: str, dimensions: int = 768) -> list[float]:

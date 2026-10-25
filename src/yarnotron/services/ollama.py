@@ -262,7 +262,9 @@ def get_ollama_client(
     client = getattr(request.app.state, "ollama_client", None)
     if client is not None:
         return client
-    return OllamaClient(settings)
+    from yarnotron.services.llm import build_llm_client
+
+    return build_llm_client(settings)
 
 
 def _extract_json_object(raw_response: str) -> dict[str, Any]:

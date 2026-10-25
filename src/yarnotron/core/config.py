@@ -2,8 +2,9 @@ import os
 import sys
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -47,6 +48,27 @@ class Settings(BaseSettings):
     embedding_model: str | None = "nomic-embed-text:v1.5"
     embedding_dimensions: int = Field(default=768, ge=1)
     request_timeout_seconds: float = Field(default=30, ge=1)
+    # Which model server to talk to. "ollama" speaks Ollama's native API (the
+    # default, unchanged). "openai" speaks the OpenAI-compatible API, which is
+    # what LiteLLM, vLLM, llama.cpp and most local engines serve; with it the
+    # *_model settings below are alias or model names on that server and
+    # `llm_base_url` (including /v1) is required.
+    llm_backend: Literal["ollama", "openai"] = "ollama"
+    llm_base_url: str | None = None
+    llm_api_key: str | None = None
+    # Ask the server for a JSON object (response_format). Off by default: the
+    # reply is parsed tolerantly either way, and not every engine supports it.
+    llm_json_mode: bool = False
+    # Send chat_template_kwargs.enable_thinking so servers that support it turn
+    # reasoning off, as Ollama's `think: false` does. Turn off for a strict
+    # OpenAI endpoint that rejects unknown request fields.
+    llm_thinking_hint: bool = True
+    # Some embedding models want different prefixes for a search query and for a
+    # stored passage (EmbeddingGemma: "task: search result | query:" and
+    # "title: none | text:"). Empty means no prefix, which is right for
+    # nomic-embed-text and the hash fallback.
+    embedding_query_prefix: str = ""
+    embedding_document_prefix: str = ""
     # temperature:0 alone does not make generation repeatable -- two identical
     # corpus runs disagreed on 25% of patch decisions. Setting a seed pins it,
     # which is what the golden corpus needs to be able to detect a regression.
@@ -65,13 +87,19 @@ class Settings(BaseSettings):
     # for a laptop and wrong for anything reachable from a home LAN.
     api_token: str | None = None
 
-    @field_validator("api_token")
+    @field_validator("api_token", "llm_api_key", "llm_base_url")
     @classmethod
     def _blank_token_means_none(cls, value: str | None) -> str | None:
         # `YARNOTRON_API_TOKEN=` in a .env file must not lock everyone out.
         if value is None:
             return None
         return value.strip() or None
+
+    @model_validator(mode="after")
+    def _openai_backend_needs_a_url(self) -> "Settings":
+        if self.llm_backend == "openai" and not self.llm_base_url:
+            raise ValueError("YARNOTRON_LLM_BASE_URL is required when YARNOTRON_LLM_BACKEND=openai")
+        return self
 
     model_config = SettingsConfigDict(
         env_prefix="YARNOTRON_",

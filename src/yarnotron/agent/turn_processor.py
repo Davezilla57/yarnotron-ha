@@ -28,7 +28,14 @@ from yarnotron.models.safety import SafetyAction, SafetyDecision, SafetySeverity
 from yarnotron.models.story import CreateStoryRequest, Story, StoryPatch
 from yarnotron.services.incremental_json import SentenceAccumulator
 from yarnotron.services.interests import InterestEnricher, schedule_enrichment
-from yarnotron.services.memory import Embedder, StoryMemoryBuilder, get_embedder, get_memory_builder
+from yarnotron.services.memory import (
+    Embedder,
+    StoryMemoryBuilder,
+    embed_document,
+    embed_query,
+    get_embedder,
+    get_memory_builder,
+)
 from yarnotron.services.shutdown import get_shutdown
 from yarnotron.services.ollama import OllamaClient, OllamaUnavailableError, get_ollama_client
 from yarnotron.services.story_store import StoryRepository, get_story_repository
@@ -263,7 +270,7 @@ class TurnProcessor:
             relevant_memories = []
             if request.story_id is not None:
                 with timer.measure("memory_query_embedding"):
-                    query_embedding = await self._embedder.embed(request.transcript)
+                    query_embedding = await embed_query(self._embedder, request.transcript)
                 with timer.measure("memory_search"):
                     relevant_memories = await self._repository.search_memory(
                         query_embedding=query_embedding,
@@ -1072,11 +1079,11 @@ class TurnProcessor:
             return response
 
         if timer is None:
-            memory_chunk.embedding = await self._embedder.embed(memory_chunk.content)
+            memory_chunk.embedding = await embed_document(self._embedder, memory_chunk.content)
             saved_chunks = await self._repository.save_memory_chunks([memory_chunk])
         else:
             with timer.measure("memory_chunk_embedding"):
-                memory_chunk.embedding = await self._embedder.embed(memory_chunk.content)
+                memory_chunk.embedding = await embed_document(self._embedder, memory_chunk.content)
             with timer.measure("save_memory_chunks"):
                 saved_chunks = await self._repository.save_memory_chunks([memory_chunk])
             timer.add_metadata(memory_chunk_count=len(saved_chunks))

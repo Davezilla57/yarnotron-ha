@@ -21,7 +21,7 @@ from yarnotron.api.routes import (
     system,
 )
 from yarnotron.core.config import get_settings
-from yarnotron.services.ollama import OllamaClient
+from yarnotron.services.llm import build_llm_client
 from yarnotron.services.repository import open_story_repository
 
 
@@ -30,7 +30,7 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     async with open_story_repository(settings) as repository:
         app.state.story_repository = repository
-        app.state.ollama_client = OllamaClient(settings)
+        app.state.ollama_client = build_llm_client(settings)
         try:
             yield
         finally:

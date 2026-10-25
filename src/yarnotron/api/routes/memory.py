@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from yarnotron.models.memory import MemorySearchRequest, MemorySearchResult
-from yarnotron.services.memory import Embedder, get_embedder
+from yarnotron.services.memory import Embedder, embed_query, get_embedder
 from yarnotron.services.story_store import StoryRepository, get_story_repository
 
 router = APIRouter(prefix="/memory", tags=["memory"])
@@ -13,7 +13,7 @@ async def search_memory(
     embedder: Embedder = Depends(get_embedder),
     repository: StoryRepository = Depends(get_story_repository),
 ) -> list[MemorySearchResult]:
-    query_embedding = await embedder.embed(request.query)
+    query_embedding = await embed_query(embedder, request.query)
     return await repository.search_memory(
         query_embedding=query_embedding,
         story_id=request.story_id,
