@@ -23,7 +23,7 @@ alias names on that server. `YARNOTRON_OLLAMA_BASE_URL` is not used.
 | `POST /api/generate` (prompt) | `POST /chat/completions` (the prompt as one user message) |
 | `options.num_predict` | `max_tokens` |
 | `options.temperature / seed / top_p / stop` | the same fields |
-| `think: false` | `chat_template_kwargs: {"enable_thinking": false}` (see `YARNOTRON_LLM_THINKING_HINT`) |
+| `think: false` | `chat_template_kwargs: {"enable_thinking": false}` and `reasoning_effort: "none"` (see `YARNOTRON_LLM_THINKING_HINT`): llama.cpp/vLLM/Qwen templates read the first, Ollama's OpenAI endpoint reads the second and otherwise lets a thinking model spend its token budget reasoning |
 | NDJSON stream | server-sent events (`data: {...}` ... `data: [DONE]`) with `stream_options.include_usage` |
 | `GET /api/tags` | `GET /models` |
 | `POST /api/embed` | `POST /embeddings` |

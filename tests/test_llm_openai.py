@@ -141,6 +141,7 @@ async def test_generate_json_request_matches_the_ollama_contract():
         "temperature": 0,
         "max_tokens": 512,
         "chat_template_kwargs": {"enable_thinking": False},
+        "reasoning_effort": "none",
     }
 
 
@@ -170,11 +171,16 @@ async def test_json_mode_and_thinking_hint_are_opt_in_and_opt_out():
     )
     await client.generate_json("p")
     assert rec.last_json["response_format"] == {"type": "json_object"}
-    assert "chat_template_kwargs" not in rec.last_json
+    assert "chat_template_kwargs" not in rec.last_json and "reasoning_effort" not in rec.last_json
 
     client, rec = client_with(lambda r: httpx.Response(200, json=chat_reply("{}")))
     await client.generate_json("p", think=None)
-    assert "chat_template_kwargs" not in rec.last_json
+    assert "chat_template_kwargs" not in rec.last_json and "reasoning_effort" not in rec.last_json
+
+    client, rec = client_with(lambda r: httpx.Response(200, json=chat_reply("{}")))
+    await client.generate_json("p", think=True)
+    assert rec.last_json["chat_template_kwargs"] == {"enable_thinking": True}
+    assert "reasoning_effort" not in rec.last_json
 
 
 async def test_bearer_token_is_sent_only_when_configured():

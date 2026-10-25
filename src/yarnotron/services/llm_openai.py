@@ -9,7 +9,7 @@ What differs from Ollama's native API:
 
 * Chat completions instead of `/api/generate`: the prompt becomes one user message.
 * `num_predict` becomes `max_tokens`; `think: false` becomes
-  `chat_template_kwargs.enable_thinking = false` (see `llm_thinking_hint`).
+  `chat_template_kwargs.enable_thinking = false` plus `reasoning_effort = "none"` (see `llm_thinking_hint`).
 * Streaming is server-sent events (`data: {...}` lines ending in `[DONE]`).
 * Ollama's per-call counters do not exist, so `StreamEvent.stats` is built from the
   `usage` block (when the server sends one) and local clocks: `prompt_eval_duration`
@@ -90,7 +90,13 @@ class OpenAICompatClient(OllamaClient):
             if field is not None and value is not None:
                 body[field] = value
         if think is not None and self._settings.llm_thinking_hint:
+            # Two spellings of "no reasoning", because engines disagree: llama.cpp, vLLM and Qwen
+            # templates read chat_template_kwargs; Ollama's OpenAI endpoint reads reasoning_effort
+            # (and ignores the template kwarg, so a thinking model spends its whole token budget
+            # reasoning). Servers that know neither ignore both.
             body["chat_template_kwargs"] = {"enable_thinking": bool(think)}
+            if not think:
+                body["reasoning_effort"] = "none"
         if json_mode and self._settings.llm_json_mode:
             body["response_format"] = {"type": "json_object"}
         if stream:
