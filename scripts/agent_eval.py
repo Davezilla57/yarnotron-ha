@@ -449,7 +449,12 @@ async def run_corpus(engine: str, corpus: dict, limit: int | None) -> list[dict]
     out: list[dict] = []
     try:
         for step in corpus["turns"][:limit]:
-            t = await env.say(step["transcript"])
+            try:
+                t = await env.say(step["transcript"])
+            except Exception as exc:  # a crashed turn is a finding, not the end of the run
+                out.append(result("corpus", engine, step["id"], FAIL, f"crash: {type(exc).__name__}: {str(exc)[:80]}"))
+                print(f"  {engine:7s} {step['id']} CRASH {type(exc).__name__}", flush=True)
+                continue
             out.append(result("corpus", engine, step["id"], PASS, "", first_ms=t.first_ms, total_ms=t.total_ms,
                               applied=[p.operation.value for p in t.response.applied_story_patches],
                               pending=[p.operation.value for p in t.response.story_patches if p.child_confirmation_required],

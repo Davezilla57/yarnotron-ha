@@ -310,7 +310,12 @@ def _extract_json_object(raw_response: str) -> dict[str, Any]:
     match = re.search(r"\{.*\}", raw_response, flags=re.DOTALL)
     if match is None:
         raise OllamaMalformedJsonError("Ollama did not return parseable JSON.")
-    parsed = json.loads(match.group(0))
+    try:
+        parsed = json.loads(match.group(0))
+    except json.JSONDecodeError as exc:
+        # A reply cut off or mangled mid-object is the model's glitch, not a crash: callers already retry or
+        # fall back on OllamaMalformedJsonError.
+        raise OllamaMalformedJsonError("Ollama returned JSON that could not be parsed.") from exc
     if not isinstance(parsed, dict):
         raise OllamaMalformedJsonError("Ollama returned JSON, but it was not an object.")
     return parsed

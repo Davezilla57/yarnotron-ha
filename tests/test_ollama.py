@@ -56,3 +56,12 @@ async def test_generate_json_merges_low_latency_options() -> None:
         "options": {"temperature": 0, "num_predict": 160},
         "think": False,
     }
+
+
+def test_a_mangled_json_object_is_a_malformed_reply_not_a_crash():
+    import pytest
+
+    from yarnotron.services.ollama import OllamaMalformedJsonError, _extract_json_object
+
+    with pytest.raises(OllamaMalformedJsonError):
+        _extract_json_object('{"response_text": "hi" "story_patches": []}')
