@@ -214,6 +214,26 @@ class TurnProcessor:
                         interest_name=pending_interest,
                     )
 
+            # "Yes, and he runs to first base" answers a scene offer and carries on. Save the scene, then
+            # treat the whole line as the next turn so the rest of it is not lost.
+            carried: list[StoryPatch] = []
+            if (
+                answer is None
+                and self._engine is not None
+                and request.story_id is not None
+                and _leads_with_yes(request.transcript)
+            ):
+                offered = _patches_awaiting_confirmation(await self._previous_turn(request))
+                if offered and all(patch.operation.value == "add_scene" for patch in offered):
+                    for patch in offered:
+                        confirmed = patch.model_copy(update={"child_confirmation_required": False})
+                        try:
+                            story = await self._repository.apply_patch(request.story_id, confirmed)
+                        except (ValueError, KeyError):
+                            logger.warning("dropped a confirmed scene offer that could not be applied")
+                            continue
+                        carried.append(confirmed)
+
             if _asks_for_story_list(request.transcript):
                 return await self._list_available_stories(request, safety, intent, timer=timer)
 
@@ -324,6 +344,7 @@ class TurnProcessor:
                     caution=caution,
                     recap=recap,
                     pending_recap=pending_recap,
+                    carried=carried,
                     story_selection=story_selection,
                     memories=relevant_memories,
                     interests=interests,
@@ -492,6 +513,7 @@ class TurnProcessor:
         caution: str | None,
         recap: str | None,
         pending_recap: SafetyEvent | None,
+        carried: list[StoryPatch],
         story_selection: "_StorySelection",
         memories: list,
         interests: list[ChildInterest],
@@ -583,7 +605,7 @@ class TurnProcessor:
         # Passed. Only now does anything change.
         reply = outcome.reply_text
         updated_story = story
-        applied: list[StoryPatch] = []
+        applied: list[StoryPatch] = list(carried)
         media_ids: list[str] = []
         notes = list(outcome.tutor_notes)
 
@@ -635,7 +657,7 @@ class TurnProcessor:
             intent=outcome.intent,
             response_text=reply or _fallback_response(outcome.intent),
             safety=safety,
-            story_patches=outcome.patches if not outcome.undo else [],
+            story_patches=[*carried, *outcome.patches] if not outcome.undo else carried,
             applied_story_patches=applied,
             updated_story=updated_story,
             tutor_notes=notes or _build_tutor_notes(request.transcript, outcome.intent),
@@ -1575,6 +1597,11 @@ def _drop_trailing_question(response_text: str) -> str:
     # No earlier sentence means the whole reply was the question, and the
     # clarifying question replaces it outright.
     return head[: boundary + 1].strip() if boundary != -1 else ""
+
+
+def _leads_with_yes(transcript: str) -> bool:
+    words = transcript.casefold().replace(",", " ").replace(".", " ").replace("!", " ").split()
+    return bool(words) and words[0] in {"yes", "yeah", "yep", "yup", "sure"} and len(words) > 1
 
 
 def _confirmation_answer(transcript: str) -> bool | None:

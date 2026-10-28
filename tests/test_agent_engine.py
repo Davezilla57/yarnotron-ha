@@ -180,10 +180,10 @@ async def test_draft_text_must_be_the_childs_own_words():
     )
     assert "draft_text" not in result.patches[0].data
     ok = interpret_actions(
-        {"actions": [{"tool": "add_scene", "args": {"title": "A", "summary": "B", "draft_text": "the cat naps"}}]},
-        AgentTurnRequest(transcript="Add a scene where the cat naps."),
+        {"actions": [{"tool": "add_scene", "args": {"title": "A", "summary": "B", "draft_text": "The cat naps in the sun."}}]},
+        AgentTurnRequest(transcript="The cat naps in the sun."),
     )
-    assert ok.patches[0].data["draft_text"] == "the cat naps"
+    assert ok.patches[0].data["draft_text"] == "The cat naps in the sun."
 
 
 def test_unknown_tools_are_refused_and_caps_hold():
@@ -548,3 +548,48 @@ async def test_interest_is_only_ambiguous_when_the_child_asks_to_add_it():
     assert not any(n.kind == "interest_clarification" for n in response.tutor_notes)
     response2, _ = await run(proc, "Let's add Kerbal Space Program.")
     assert any(n.kind == "interest_clarification" for n in response2.tutor_notes)
+
+
+async def test_yes_and_more_saves_the_offered_scene_and_carries_on():
+    llm = FakeAgentLLM(actions=[{"tool": "add_scene", "args": {"title": "Door", "summary": "A door."}}])
+    proc, repo = build(llm)
+    first, said1 = await run(proc, "Wren finds a hidden door behind the lamp room.")
+    assert said1[-1].endswith(code_messages.SCENE_OFFER_QUESTION) and repo._story.scenes == []
+    follow, _ = await run(proc, "Yes, and add that she opens it very slowly.")
+    assert len(repo._story.scenes) == 1
+    assert follow.applied_story_patches and follow.applied_story_patches[0].operation.value == "add_scene"
+    assert follow.response_text
+
+
+async def test_yes_and_more_does_not_confirm_a_removal():
+    llm = FakeAgentLLM(actions=[{"tool": "remove_scene", "args": {"id": "scene_a"}}])
+    proc, repo = build(llm)
+    await run(proc, "Remove the first scene.")
+    scenes_before = len(repo._story.scenes)
+    await run(proc, "Yes, and then the cat naps in the sun.")
+    assert len(repo._story.scenes) == scenes_before
+
+
+def test_rename_without_a_named_title_changes_nothing():
+    request = AgentTurnRequest(transcript="Let's rename this story.")
+    result = interpret_actions({"actions": [{"tool": "update_title", "args": {"title": "New Title"}}]}, request)
+    assert result.patches == [] and "update_title:not_named" in result.refused
+    named = interpret_actions(
+        {"actions": [{"tool": "update_title", "args": {"title": "Lion Baseball"}}]},
+        AgentTurnRequest(transcript="No. Rename the story Lion Baseball."),
+    )
+    assert named.patches and named.patches[0].data["title"] == "Lion Baseball"
+
+
+def test_commands_are_not_saved_as_story_wording():
+    for said in ("No, create a new scene with the lion getting very sad.", "Create a story about a lion that..."):
+        result = interpret_actions(
+            {"actions": [{"tool": "add_scene", "args": {"title": "A", "summary": "B", "draft_text": said}}]},
+            AgentTurnRequest(transcript=said),
+        )
+        assert "draft_text" not in result.patches[0].data
+    kept = interpret_actions(
+        {"actions": [{"tool": "add_scene", "args": {"title": "A", "summary": "B", "draft_text": "He hits the ball."}}]},
+        AgentTurnRequest(transcript="He hits the ball."),
+    )
+    assert kept.patches[0].data["draft_text"] == "He hits the ball."

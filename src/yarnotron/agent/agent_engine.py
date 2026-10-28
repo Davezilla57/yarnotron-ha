@@ -55,6 +55,11 @@ _PICTURE_WORDS = re.compile(r"\b(picture|image|draw|drawing|paint|painting|illus
 _EXPLICIT_SCENE = re.compile(
     r"\b(add|make|create|write|put in|start)\b[^.?!]{0,30}\b(scene|chapter)\b", re.IGNORECASE
 )
+# A line that gives the app an order is not story narration, so it is never saved as the child's story wording.
+_COMMAND_LINE = re.compile(
+    r"^\W*(?:(?:no|yes|uh|um|okay|ok)\W+)*(?:please\s+)?(?:create|make|add|start|rename|remove|delete|write|tell)\b",
+    re.IGNORECASE,
+)
 # Only the code knows whether something was saved or removed. When the child is asking for a change, a Talker
 # sentence that says it already happened is dropped before it is spoken.
 _EDIT_WORDS = re.compile(
@@ -294,8 +299,16 @@ def interpret_actions(
                     continue
             # Story wording must be the child's own: drop a draft that is not a quote of what they said.
             draft = args.get("draft_text")
-            if isinstance(draft, str) and _norm(draft) not in transcript_norm:
+            if isinstance(draft, str) and (
+                _norm(draft) not in transcript_norm or explicit_scene or _COMMAND_LINE.search(request.transcript)
+            ):
                 args.pop("draft_text")
+            if name == "update_title" and (
+                not _norm(str(args.get("title", ""))) or _norm(str(args["title"])) not in transcript_norm
+            ):
+                # The child has not said the new name yet: nothing changes, the Talker asks for it.
+                result.refused.append("update_title:not_named")
+                continue
             flagged = False
             if name == "add_scene" and not explicit_scene:
                 if not allow_scene_offer:

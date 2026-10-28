@@ -334,6 +334,7 @@ async def run_scenarios(engine: str, scenarios: dict, seed: dict, corpus: dict) 
                 lines = [t["transcript"] for t in corpus["turns"] if t["expect_intent"] == "continue_story" and "note" not in t]
                 lines = (lines * 2)[:60]
                 bad = 0
+                closed = 0
                 for line in lines:
                     t = await env.say(line)
                     replies.append(t.reply)
@@ -341,7 +342,10 @@ async def run_scenarios(engine: str, scenarios: dict, seed: dict, corpus: dict) 
                         continue
                     if sentences(t.reply) > 3 or len(t.reply) > 220 or t.reply.count("?") > 1:
                         bad += 1
-                add(sid, PASS if bad <= 3 else FAIL, f"{bad} of {len(lines)} replies broke the voice rules (>3 sentences, >220 chars or >1 question)")
+                    last = re.split(r"(?<=[.!?])\s+", t.reply.strip())[-1] if t.reply.strip() else ""
+                    if last.endswith("?") and re.match(r"(do|does|did|can|could|would|should|is|are|will|want)\b", last, re.I):
+                        closed += 1
+                add(sid, PASS if bad <= 3 else FAIL, f"{bad} of {len(lines)} replies broke the voice rules (>3 sentences, >220 chars or >1 question); {closed} ended on a yes/no question (target 0)")
                 continue
             for n, step in enumerate(session["turns"], 1):
                 say = step["say"]
