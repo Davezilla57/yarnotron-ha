@@ -145,6 +145,8 @@ Known interests for this child:
 {_compact(interest_context)}
 
 Child said: {request.transcript}
+
+Reminder: two short sentences. The last sentence is one question that starts with What, How, Who, Where or Why.
 """
 
 

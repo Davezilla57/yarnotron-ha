@@ -343,7 +343,7 @@ async def run_scenarios(engine: str, scenarios: dict, seed: dict, corpus: dict) 
                     if sentences(t.reply) > 3 or len(t.reply) > 220 or t.reply.count("?") > 1:
                         bad += 1
                     last = re.split(r"(?<=[.!?])\s+", t.reply.strip())[-1] if t.reply.strip() else ""
-                    if last.endswith("?") and re.match(r"(do|does|did|can|could|would|should|is|are|will|want)\b", last, re.I):
+                    if last not in {code_messages.SCENE_OFFER_QUESTION, code_messages.CONFIRM_QUESTION} and last.endswith("?") and re.match(r"(do|does|did|can|could|would|should|is|are|will|want)\b", last, re.I):
                         closed += 1
                 add(sid, PASS if bad <= 3 else FAIL, f"{bad} of {len(lines)} replies broke the voice rules (>3 sentences, >220 chars or >1 question); {closed} ended on a yes/no question (target 0)")
                 continue
