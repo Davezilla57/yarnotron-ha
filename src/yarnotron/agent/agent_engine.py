@@ -348,6 +348,39 @@ def _known_ids(story: Story | None) -> set[str]:
     return {c.id for c in story.characters} | {sc.id for sc in story.scenes} | {f.id for f in story.facts}
 
 
+def _without_repeated_lead(line: str, spoken_last: str) -> str:
+    """If the Talker already said the opening sentence of the code's line, say only the rest of it."""
+    parts = re.split(r"(?<=[.!?])\s+", line.strip())
+    norm = lambda text: re.sub(r"[^a-z]", "", text.casefold())  # noqa: E731
+    if len(parts) > 1 and norm(parts[0]) == norm(spoken_last):
+        return " ".join(parts[1:])
+    return line
+
+
+def _removal_target_named(patch: StoryPatch, story: Story | None, transcript: str) -> bool:
+    """A removal goes to the child for a yes only if their words point at what would go.
+
+    The Scribe can pick the wrong thing, and the held question does not say what it is about, so a removal whose
+    target the child did not name (by name, role or title word) is never staged.
+    """
+    operation = patch.operation.value
+    if not operation.startswith("remove_") or story is None or "id" not in patch.data:
+        return True
+    if "character" in operation:
+        entries = [(c.id, [c.name, c.role]) for c in story.characters]
+    elif "scene" in operation:
+        entries = [(sc.id, [sc.title]) for sc in story.scenes]
+    else:
+        return True
+    spoken = transcript.casefold()
+    for item_id, labels in entries:
+        if item_id != patch.data["id"]:
+            continue
+        words = {w for label in labels if label for w in re.findall(r"[a-z']+", label.casefold()) if len(w) >= 4 or w == labels[0].casefold()}
+        return any(re.search(rf"\b{re.escape(w)}\b", spoken) for w in words)
+    return True
+
+
 def _resolve_unknown_id(patch: StoryPatch, story: Story | None, transcript: str, known: set[str]) -> StoryPatch:
     """A Scribe id that is not in the story is replaced by the one thing the child named, if there is exactly one."""
     current = patch.data.get("id")
@@ -589,7 +622,10 @@ class AgentEngine:
             if scribe.patches and not scribe.undo:
                 known = _known_ids(story)
                 resolved = [_resolve_unknown_id(p, story, request.transcript, known) for p in scribe.patches]
-                valid = [p for p in resolved if "id" not in p.data or p.data["id"] in known]
+                valid = [
+                    p for p in resolved
+                    if ("id" not in p.data or p.data["id"] in known) and _removal_target_named(p, story, request.transcript)
+                ]
                 dropped = [p for p in resolved if p not in valid]
                 outcome.refused += [f"{p.operation.value}:unknown_id" for p in dropped]
                 if dropped and not valid:
@@ -614,7 +650,14 @@ class AgentEngine:
         if replacement is not None and not outcome.undo:
             # The last sentence normally has not been spoken yet and gives way to the code's line. If it was
             # already spoken (no closing question), the line follows it.
-            final = replacement if last_already_spoken else f"{_drop_trailing_question(last)} {replacement}".strip()
+            remainder = _without_repeated_lead(replacement, last)
+            repeated = remainder != replacement
+            if last_already_spoken:
+                final = remainder
+            elif repeated:
+                final = replacement
+            else:
+                final = f"{_drop_trailing_question(last)} {replacement}".strip()
             if gates and not last_already_spoken:
                 gates[-1].cancel()
             decision = await self._gate(request, final)

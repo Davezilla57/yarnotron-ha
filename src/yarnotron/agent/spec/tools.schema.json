@@ -238,7 +238,7 @@
    "name": "note_interest",
    "class": "auto",
    "per_turn_max": 1,
-   "description": "The child named something they love or compare the story to (a game, show, book, sport, animal, place). Use their words for it. Set ambiguous only if the name could also be a character, place or object inside the story itself. 'Make it feel like X' and 'I love X' are not ambiguous. Never use this for ordinary story objects such as lunch or a key.",
+   "description": "The child named something they love or compare the story to (a game, show, book, sport, animal, place). Use their words for it. Set ambiguous when the child asks to add or put in the name ('let's add X', 'put X in'), because it could be story content or just a liking. 'Make it feel like X' and 'I love X' are not ambiguous. Never use this for ordinary story objects such as lunch or a key.",
    "parameters": {
     "type": "object",
     "required": [

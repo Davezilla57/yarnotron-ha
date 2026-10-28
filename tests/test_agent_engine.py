@@ -471,3 +471,45 @@ def test_spelled_out_alert_words_are_caught(line):
 
 def test_ordinary_single_letters_are_not_a_word():
     assert SafetyClassifier().classify("Plan A and plan B and then plan C").action == SafetyAction.ALLOW
+
+
+async def test_removal_of_something_the_child_did_not_name_is_not_staged():
+    repo = FakeStoryRepository()
+    repo._story = Story(
+        title="T",
+        characters=[Character(id="character_a", name="Wren", role="keeper"), Character(id="character_b", name="Barnacle", role="gull")],
+    )
+    llm = FakeAgentLLM(actions=[{"tool": "remove_character", "args": {"id": "character_b"}}])
+    proc, _ = build(llm, repo=repo)
+    response, said = await run(proc, "Remove the character Fennick, he never showed up.")
+    assert response.story_patches == []
+    assert said[-1].endswith(code_messages.UNCLEAR_TARGET)
+    assert len(repo._story.characters) == 2
+
+
+async def test_removal_by_role_word_is_still_held_for_a_yes():
+    repo = FakeStoryRepository()
+    repo._story = Story(title="T", characters=[Character(id="character_b", name="Barnacle", role="gull")])
+    llm = FakeAgentLLM(actions=[{"tool": "remove_character", "args": {"id": "character_b"}}])
+    proc, _ = build(llm, repo=repo)
+    response, said = await run(proc, "Get rid of the gull.")
+    assert response.story_patches and response.story_patches[0].child_confirmation_required
+
+
+def test_plural_and_past_forms_of_redirect_words_are_caught():
+    for line in ["someone gets tortured", "drugs in the water", "the bullies steal it", "he was stealing"]:
+        assert SafetyClassifier().classify(line).action == SafetyAction.REDIRECT, line
+    assert SafetyClassifier().classify("a stealthy fox in the garden").action == SafetyAction.ALLOW
+
+
+async def test_code_line_does_not_repeat_a_sentence_the_talker_already_said():
+    repo = FakeStoryRepository()
+    repo._story = Story(title="T", characters=[Character(id="character_fennick", name="Fennick")])
+    llm = FakeAgentLLM(
+        talk="Fennick can go. That's a big change.",
+        actions=[{"tool": "remove_character", "args": {"id": "character_fennick"}}],
+    )
+    proc, _ = build(llm, repo=repo)
+    response, said = await run(proc, "Remove Fennick.")
+    assert " ".join(said).count("That's a big change.") == 1, said
+    assert said[-1].endswith("Should I make it?")

@@ -28,7 +28,7 @@ def _contains_term(text: str, terms: set[str]) -> bool:
     the turn -- "unisex" for sexual content. A term list this short cannot afford
     to fire on the middle of ordinary words.
     """
-    return any(re.search(rf"\b{re.escape(term)}\b", text) for term in terms)
+    return any(re.search(rf"\b{re.escape(term)}(?:s|es|ed|d|ing)?\b", text) for term in terms)
 
 
 class SafetyClassifier:
