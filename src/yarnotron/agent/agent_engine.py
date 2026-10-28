@@ -67,6 +67,8 @@ _CHANGE_CLAIM = re.compile(
     r"(gone|removed|deleted|erased|taken out|saved|added|changed|updated|replaced|restored)\b"
     r"|\bi(\s+have|'ve|\u2019ve|'ll|\s+will)?\s+(just\s+|now\s+|already\s+)?"
     r"(removed|deleted|erased|took out|taken out|saved|added|changed|updated|replaced|undid|restored|put back)\b"
+    r"|\bi(?:'ll|\u2019ll|\s+will|'m going to|\s+am going to)\s+(?:go ahead and\s+)?"
+    r"(remove|delete|erase|take out|cut|change|replace|save|add|undo)\b"
     r"|\b(removed|deleted|saved|added) (that|it|this|him|her|them)\b"
     r"|\bno longer in the story\b)",
     re.IGNORECASE,
@@ -280,7 +282,8 @@ def interpret_actions(
                 result.refused.append("request_picture:not_requested")
         elif name == "note_interest":
             if result.interest is None:
-                result.interest = (args["name"], bool(args.get("ambiguous")))
+                asks_to_add = bool(re.search(r"\b(add|put|include)\b", request.transcript, re.IGNORECASE))
+                result.interest = (args["name"], bool(args.get("ambiguous")) and asks_to_add)
         elif name == "add_tutor_note":
             result.tutor_notes.append(TutorNote(kind=args["kind"], text=args["text"]))
         elif name in _PATCH_TOOLS:
@@ -373,6 +376,11 @@ def _removal_target_named(patch: StoryPatch, story: Story | None, transcript: st
     else:
         return True
     spoken = transcript.casefold()
+    if "scene" in operation:
+        ordered = [sc.id for sc in sorted(story.scenes, key=lambda sc: sc.sequence)]
+        for word, index in (("first", 0), ("second", 1), ("third", 2), ("fourth", 3), ("last", -1), ("final", -1)):
+            if re.search(rf"\b{word}\b", spoken) and ordered and ordered[index] == patch.data["id"]:
+                return True
     for item_id, labels in entries:
         if item_id != patch.data["id"]:
             continue

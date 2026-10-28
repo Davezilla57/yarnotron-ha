@@ -497,9 +497,10 @@ async def test_removal_by_role_word_is_still_held_for_a_yes():
 
 
 def test_plural_and_past_forms_of_redirect_words_are_caught():
-    for line in ["someone gets tortured", "drugs in the water", "the bullies steal it", "he was stealing"]:
+    for line in ["someone gets tortured", "drugs in the water", "the bullies steal it"]:
         assert SafetyClassifier().classify(line).action == SafetyAction.REDIRECT, line
     assert SafetyClassifier().classify("a stealthy fox in the garden").action == SafetyAction.ALLOW
+    assert SafetyClassifier().classify("The pirate steals the golden compass back.").action == SafetyAction.ALLOW
 
 
 async def test_code_line_does_not_repeat_a_sentence_the_talker_already_said():
@@ -513,3 +514,37 @@ async def test_code_line_does_not_repeat_a_sentence_the_talker_already_said():
     response, said = await run(proc, "Remove Fennick.")
     assert " ".join(said).count("That's a big change.") == 1, said
     assert said[-1].endswith("Should I make it?")
+
+
+async def test_scene_removal_by_position_is_held_for_a_yes():
+    from yarnotron.models.story import Scene
+
+    repo = FakeStoryRepository()
+    repo._story = Story(
+        title="T",
+        scenes=[Scene(id="scene_a", title="The Light Goes Out", summary="x", sequence=0), Scene(id="scene_b", title="Climbing the Stair", summary="y", sequence=1)],
+    )
+    llm = FakeAgentLLM(actions=[{"tool": "remove_scene", "args": {"id": "scene_b"}}])
+    proc, _ = build(llm, repo=repo)
+    response, said = await run(proc, "Delete the second scene.")
+    assert response.story_patches and response.story_patches[0].child_confirmation_required
+    wrong = FakeAgentLLM(actions=[{"tool": "remove_scene", "args": {"id": "scene_a"}}])
+    proc2, repo2 = build(wrong, repo=repo)
+    response2, said2 = await run(proc2, "Delete the second scene.")
+    assert response2.story_patches == [] and said2[-1].endswith(code_messages.UNCLEAR_TARGET)
+
+
+async def test_talker_future_promises_of_a_change_are_dropped():
+    llm = FakeAgentLLM(talk="Okay, I will remove that part of the story. What happens next?")
+    proc, _ = build(llm)
+    _, said = await run(proc, "Delete the second scene.")
+    assert not any("I will remove" in s for s in said), said
+
+
+async def test_interest_is_only_ambiguous_when_the_child_asks_to_add_it():
+    llm = FakeAgentLLM(actions=[{"tool": "note_interest", "args": {"name": "Kerbal Space Program", "ambiguous": True}}])
+    proc, _ = build(llm)
+    response, said = await run(proc, "Make it feel like Kerbal Space Program.")
+    assert not any(n.kind == "interest_clarification" for n in response.tutor_notes)
+    response2, _ = await run(proc, "Let's add Kerbal Space Program.")
+    assert any(n.kind == "interest_clarification" for n in response2.tutor_notes)

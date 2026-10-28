@@ -20,7 +20,7 @@ from yarnotron.services.ollama import (
 logger = logging.getLogger(__name__)
 
 
-def _contains_term(text: str, terms: set[str]) -> bool:
+def _contains_term(text: str, terms: set[str], inflect: bool = True) -> bool:
     """Whole words only.
 
     These were substring matches, which is how "whatever" was flagged for hate,
@@ -28,7 +28,7 @@ def _contains_term(text: str, terms: set[str]) -> bool:
     the turn -- "unisex" for sexual content. A term list this short cannot afford
     to fire on the middle of ordinary words.
     """
-    return any(re.search(rf"\b{re.escape(term)}(?:s|es|ed|d|ing)?\b", text) for term in terms)
+    return any(re.search(rf"\b{re.escape(term)}{'(?:s|es|ed|d|ing)?' if inflect else ''}\b", text) for term in terms)
 
 
 class SafetyClassifier:
@@ -80,6 +80,9 @@ class SafetyClassifier:
         )
     )
 
+    # Ordinary story words that stay exact: "steals" and "stealing" in a pirate story do not cost a strike.
+    _exact_redirect_terms = {"steal", "bully"}
+
     def classify(self, transcript: str) -> SafetyDecision:
         normalized = transcript.lower().replace("\u2019", "'")
         # Letters said one at a time ("S E X", "a n u d e") are read as the word they spell.
@@ -113,7 +116,9 @@ class SafetyClassifier:
                 parent_note="The transcript matched an initial high-severity safety keyword.",
             )
 
-        if _contains_term(normalized, self._redirect_terms):
+        if _contains_term(normalized, self._redirect_terms - self._exact_redirect_terms) or _contains_term(
+            normalized, self._exact_redirect_terms, inflect=False
+        ):
             return SafetyDecision(
                 action=SafetyAction.REDIRECT,
                 severity=SafetySeverity.REVIEW,
