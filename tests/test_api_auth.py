@@ -117,3 +117,40 @@ def test_dashboard_sends_the_token_with_its_requests(monkeypatch, tmp_path):
 
     assert "Authorization" in page
     assert "sessionStorage" in page
+
+
+def _basic(user: str, password: str) -> dict[str, str]:
+    import base64
+
+    return {"Authorization": "Basic " + base64.b64encode(f"{user}:{password}".encode()).decode()}
+
+
+def password_client(monkeypatch, tmp_path) -> TestClient:
+    monkeypatch.setenv("YARNOTRON_DASHBOARD_PASSWORD", "open-sesame")
+    monkeypatch.setenv("YARNOTRON_DASHBOARD_USER", "parent")
+    return make_client(monkeypatch, tmp_path, TOKEN)
+
+
+def test_dashboard_asks_for_a_username_and_password(monkeypatch, tmp_path):
+    with password_client(monkeypatch, tmp_path) as client:
+        refused = client.get("/dashboard")
+        assert refused.status_code == 401
+        assert refused.headers["www-authenticate"].startswith("Basic")
+        assert client.get("/dashboard", headers=_basic("parent", "wrong")).status_code == 401
+        assert client.get("/dashboard", headers=_basic("someone", "open-sesame")).status_code == 401
+        assert client.get("/dashboard", headers=_basic("parent", "open-sesame")).status_code == 200
+
+
+def test_password_also_opens_the_api_and_the_token_still_works(monkeypatch, tmp_path):
+    with password_client(monkeypatch, tmp_path) as client:
+        assert client.get("/v1/stories").status_code == 401
+        assert client.get("/v1/stories", headers=_basic("parent", "open-sesame")).status_code == 200
+        assert client.get("/v1/stories", headers=_basic("parent", "nope")).status_code == 401
+        assert client.get("/v1/stories", headers={"Authorization": f"Bearer {TOKEN}"}).status_code == 200
+
+
+def test_without_a_password_the_dashboard_is_as_before(monkeypatch, tmp_path):
+    monkeypatch.delenv("YARNOTRON_DASHBOARD_PASSWORD", raising=False)
+    with make_client(monkeypatch, tmp_path, TOKEN) as client:
+        assert client.get("/dashboard").status_code == 200
+        assert client.get("/v1/stories").headers.get("www-authenticate") == "Bearer"

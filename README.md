@@ -154,6 +154,11 @@ Open the local parent dashboard:
 
 ```text
 http://127.0.0.1:8989/dashboard
+
+To sign in with a username and password instead of the API token, set
+`YARNOTRON_DASHBOARD_PASSWORD` (and optionally `YARNOTRON_DASHBOARD_USER`, default `parent`).
+The browser then shows its own sign-in box for `/dashboard`, and the same login opens `/v1`.
+The bearer token keeps working for Home Assistant. Both travel unencrypted on a plain-HTTP LAN.
 ```
 
 The dashboard includes parent controls for exporting or deleting stories,

@@ -1,10 +1,12 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import HTMLResponse
+
+from yarnotron.api.auth import require_dashboard_login
 
 router = APIRouter(tags=["dashboard"])
 
 
-@router.get("/dashboard", response_class=HTMLResponse)
+@router.get("/dashboard", response_class=HTMLResponse, dependencies=[Depends(require_dashboard_login)])
 async def dashboard() -> str:
     return """
 <!doctype html>

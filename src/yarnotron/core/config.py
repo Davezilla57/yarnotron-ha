@@ -89,8 +89,12 @@ class Settings(BaseSettings):
     # Unset (or blank) keeps the old trust-the-network behaviour, which is right
     # for a laptop and wrong for anything reachable from a home LAN.
     api_token: str | None = None
+    # A username and password for people. The dashboard asks for them with the browser's own sign-in prompt, and
+    # they open the /v1 routes too, so the dashboard never needs the API token. Unset keeps the dashboard as before.
+    dashboard_user: str = "parent"
+    dashboard_password: str | None = None
 
-    @field_validator("api_token", "llm_api_key", "llm_base_url")
+    @field_validator("api_token", "dashboard_password", "llm_api_key", "llm_base_url")
     @classmethod
     def _blank_token_means_none(cls, value: str | None) -> str | None:
         # `YARNOTRON_API_TOKEN=` in a .env file must not lock everyone out.
