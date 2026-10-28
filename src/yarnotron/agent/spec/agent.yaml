@@ -58,7 +58,9 @@ guards:                     # all code, all before or after the model
     on_block: replace_with_code_message
   output_review: {model: gate, scope: [reply_text, proposed_scribe_actions], on_block: discard_actions}
   deferred_input_review: {model: gate, independent_reviewer: preferred, on_flag: [parent_event, held_back_content]}
-  code_messages: [worried_child, pii_not_kept, redirect, stop, strike_end]    # fixed scripts the Talker repeats verbatim
+  code_messages: [worried_child, pii_not_kept, redirect, stop, strike_end, unclear_target]    # fixed scripts the Talker repeats verbatim
+  unclear_target:             # PROPOSED 2026-10-27, needs parent approval; said when the child asks to change something and code cannot tell which
+    script_text: "I'm not sure which one you mean. Can you tell me its name again?"
   worried_child:              # reviewer decision: fixed script, not model words
     trigger: [input_review_category_worried_child, alert_keywords]   # model-flagged categories: unsafe_at_home, secret_from_parent, stranger_contact, self_harm_intent
     action: speak_script_then_stop_story_and_raise_parent_event

@@ -473,6 +473,15 @@ class TurnProcessor:
             return code_messages.WORRIED_CHILD_SCRIPT
         return _safety_stop_message(decision)
 
+    def _gate_line(self, decision: SafetyDecision, caution: str | None) -> str:
+        """What the child hears when the gate stops the reply: fixed code wording, never the model's own.
+
+        A redirect that follows a caution already spoken says nothing more, so the line is not said twice.
+        """
+        if decision.action in _STOP_ACTIONS:
+            return self._stop_message(decision)
+        return "" if caution else _DEFAULT_CAUTION
+
     async def _agent_story_turn(
         self,
         request: AgentTurnRequest,
@@ -541,20 +550,16 @@ class TurnProcessor:
         # The gate vetoed a sentence: what was already said stands, the rest is dropped, nothing is saved.
         if outcome.vetoed is not None:
             safety = combine_safety_decisions(safety, outcome.vetoed)
-            message = (
-                self._stop_message(outcome.vetoed)
-                if outcome.vetoed.action in _STOP_ACTIONS
-                else outcome.vetoed.child_message
-                or "Let's steer that in a safer direction and keep the story adventurous."
-            )
-            await say(message)
+            message = self._gate_line(outcome.vetoed, caution)
+            if message:
+                await say(message)
             response = AgentTurnResponse(
                 intent=outcome.intent,
-                response_text=message,
+                response_text=message or outcome.reply_text,
                 safety=safety,
                 retrieved_memory_ids=memory_ids,
             )
-            return await self._persist_turn(request, response, timer=timer)
+            return await self._persist_turn(request, response, timer=timer, strike=caution is not None)
 
         with timer.measure("output_safety"):
             output_safety = await self._safety.review_assistant_output(
@@ -564,20 +569,16 @@ class TurnProcessor:
             )
         safety = combine_safety_decisions(safety, output_safety)
         if output_safety.action in _STOP_ACTIONS or output_safety.action == SafetyAction.REDIRECT:
-            message = (
-                self._stop_message(output_safety)
-                if output_safety.action in _STOP_ACTIONS
-                else output_safety.child_message
-                or "Let's steer that in a safer direction and keep the story adventurous."
-            )
-            await say(message)
+            message = self._gate_line(output_safety, caution)
+            if message:
+                await say(message)
             response = AgentTurnResponse(
                 intent=outcome.intent,
-                response_text=message,
+                response_text=message or outcome.reply_text,
                 safety=safety,
                 retrieved_memory_ids=memory_ids,
             )
-            return await self._persist_turn(request, response, timer=timer)
+            return await self._persist_turn(request, response, timer=timer, strike=caution is not None)
 
         # Passed. Only now does anything change.
         reply = outcome.reply_text
@@ -1400,6 +1401,8 @@ _CONFIRM_YES = frozenset(
         "please do", "sure", "okay do it", "ok do it", "confirm", "make the change",
     }
 )
+_NO_TAIL = frozenset({"keep", "leave", "it", "that", "thanks", "thank", "you", "dont", "do", "not", "please", "alone", "stop", "as", "is"})
+_YES_TAIL = frozenset({"please", "do", "it", "that", "go", "ahead", "thanks", "thank", "you", "make", "the", "change", "remove", "delete"})
 _CONFIRM_NO = frozenset(
     {
         "no", "nope", "no thanks", "no thank you", "dont", "do not", "leave it",
@@ -1522,7 +1525,7 @@ def _safety_stop_message(decision: SafetyDecision) -> str:
 def _is_worried_child(decision: SafetyDecision) -> bool:
     """Self-harm or a child disclosing something unsafe: the fixed script, never the model's words."""
     text = " ".join(decision.categories).casefold()
-    return any(marker in text for marker in ("self_harm", "self-harm", "suicide", "worried_child"))
+    return any(marker in text for marker in ("self_harm", "self-harm", "suicide", "worried_child", "grooming", "abuse"))
 
 
 def _session_strikes(session: StorySession | None) -> int:
@@ -1584,6 +1587,12 @@ def _confirmation_answer(transcript: str) -> bool | None:
         return True
     if normalized in _CONFIRM_NO:
         return False
+    words = normalized.split()
+    # "No, keep it" and "yes please do it" are answers. Anything with story words in it is not.
+    if words and words[0] in {"no", "nope", "nah"} and all(w in _NO_TAIL for w in words[1:]) and len(words) <= 5:
+        return False
+    if words and words[0] in {"yes", "yeah", "yep", "yup", "ok", "okay", "sure"} and all(w in _YES_TAIL for w in words[1:]) and len(words) <= 5:
+        return True
     return None
 
 

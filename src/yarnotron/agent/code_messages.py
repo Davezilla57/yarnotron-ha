@@ -14,3 +14,4 @@ UNDO_DONE = "No problem. I put the story back the way it was before the last cha
 UNDO_NOTHING = "I do not see a recent story change to undo yet. What tiny change should we try next?"
 PICTURE_SAVED = "I saved that picture idea for a grown-up to approve, and we can keep writing while it waits."
 SAVE_FAILED = "I could not save that just now, but we can keep going with the story."
+UNCLEAR_TARGET = "I'm not sure which one you mean. Can you tell me its name again?"

@@ -204,7 +204,9 @@ async def test_p11_contact_details_leave_no_trace_anywhere():
         )
         digits = re.findall(r"\d{2,3}", text)
         assert marker.lower() not in sinks.lower(), (text, sinks[:200])
-        assert not any(d in re.sub(r"[^0-9]", " ", sinks).split() for d in digits)
+        # Generated ids are long hex strings; their digit runs are not the child's numbers.
+        scrubbed = re.sub(r"\b\w+_[0-9a-f]{16,}\b", " ", sinks)
+        assert not any(d in re.sub(r"[^0-9]", " ", scrubbed).split() for d in digits)
 
 
 async def test_p13_worried_child_reply_is_the_approved_script_byte_for_byte():

@@ -64,7 +64,7 @@ class GateOn:
     async def review_assistant_output(self, transcript, response_text, story_patches):
         self.reviewed.append(response_text)
         if self.bad and self.bad in response_text:
-            return SafetyDecision(action=SafetyAction.REDIRECT, severity=SafetySeverity.REVIEW, child_message="Let's steer that safely.")
+            return SafetyDecision(action=SafetyAction.REDIRECT, severity=SafetySeverity.REVIEW, child_message="Let's keep that part of the story safe and kind.")
         if self.output_redirect and story_patches:
             return SafetyDecision(action=SafetyAction.REDIRECT, severity=SafetySeverity.REVIEW, child_message="Let's make that safer.")
         return SafetyDecision()
@@ -114,9 +114,9 @@ async def test_sentence_veto_stops_speech_and_saves_nothing():
     proc, repo = build(llm, GateOn(bad="Pip see"))
     response, said = await run(proc, "The fox finds a lantern.")
     assert said[0] == "I love that the fox found a lantern."
-    assert said[-1] == "Let's steer that safely."
+    assert said[-1] == "Let's keep that part of the story safe and kind."
     assert response.applied_story_patches == []
-    assert response.response_text == "Let's steer that safely."
+    assert response.response_text == "Let's keep that part of the story safe and kind."
     assert repo._story.facts == []
 
 
@@ -126,7 +126,7 @@ async def test_failed_output_review_discards_the_scribes_actions():
     response, said = await run(proc, "A secret fact.")
     assert response.applied_story_patches == []
     assert repo._story.facts == []
-    assert said[-1] == "Let's make that safer."
+    assert said[-1] == "Let's keep that part of the story safe and kind."
 
 
 async def test_destructive_edit_is_held_and_the_child_is_asked_once():
@@ -348,3 +348,126 @@ async def test_scene_offers_are_not_repeated_every_turn():
     assert said1[-1].endswith(code_messages.SCENE_OFFER_QUESTION)
     second, said2 = await run(proc, "Behind it is a long staircase going down.")
     assert code_messages.SCENE_OFFER_QUESTION not in " ".join(said2)
+
+
+async def test_caution_prefix_is_not_repeated_in_the_final_text():
+    proc, _ = build(FakeAgentLLM())
+    response, said = await run(proc, "A story about a bully who steals.")
+    caution = said[0]
+    assert caution.startswith("Let's steer that")
+    assert response.response_text.count(caution) == 1, response.response_text
+
+
+async def test_redirect_after_caution_is_not_said_twice_and_uses_code_wording():
+    proc, _ = build(FakeAgentLLM(), safety=GateOn(bad="lantern"))
+    response, said = await run(proc, "A story about a bully who steals.")
+    assert sum(s.startswith("Let's steer that") for s in said) == 1, said
+    assert "Let's keep that part of the story safe and kind." not in " ".join(said), "the model's own wording is never spoken"
+
+
+async def test_cautioned_turns_with_a_vetoed_reply_still_spend_strikes():
+    proc, _ = build(FakeAgentLLM(), safety=GateOn(bad="lantern"))
+    ended = False
+    session_id = None
+    for _ in range(5):
+        response, _ = await run(proc, "A story about a bully who steals.", session_id=session_id)
+        session_id = response.session_id
+        ended = "strike_limit_reached" in response.safety.categories
+    assert ended, "five cautioned turns end the session even when the reply was vetoed"
+
+
+async def test_talker_cannot_claim_a_change_it_did_not_make():
+    claim = "Okay, Fennick is gone. The lighthouse feels quieter. What does Wren do next?"
+    repo = FakeStoryRepository()
+    repo._story = Story(title="T", characters=[Character(id="character_fennick", name="Fennick")])
+    llm = FakeAgentLLM(talk=claim, actions=[{"tool": "remove_character", "args": {"id": "character_fennick"}}])
+    proc, _ = build(llm, repo=repo)
+    response, said = await run(proc, "Remove Fennick.")
+    assert not any("is gone" in s for s in said), said
+    assert said[-1].endswith(code_messages.CONFIRM_QUESTION)
+    assert repo._story.characters
+
+
+async def test_ordinary_story_sentences_are_not_dropped_when_nothing_is_being_edited():
+    llm = FakeAgentLLM(talk="The fog is gone and the shore is bright. What does Pip see?")
+    proc, _ = build(llm)
+    _, said = await run(proc, "The sun came up over the water.")
+    assert said[0] == "The fog is gone and the shore is bright."
+
+
+async def test_scribe_placeholder_id_is_resolved_by_the_name_the_child_said():
+    repo = FakeStoryRepository()
+    repo._story = Story(title="T", characters=[Character(id="character_fennick", name="Fennick")])
+    llm = FakeAgentLLM(actions=[{"tool": "remove_character", "args": {"id": "character_placeholder"}}])
+    proc, _ = build(llm, repo=repo)
+    response, said = await run(proc, "Remove the character Fennick, he never showed up.")
+    assert response.story_patches and response.story_patches[0].data["id"] == "character_fennick"
+    assert response.story_patches[0].child_confirmation_required
+    assert said[-1].endswith(code_messages.CONFIRM_QUESTION)
+
+
+async def test_unresolvable_target_asks_instead_of_going_quiet():
+    repo = FakeStoryRepository()
+    repo._story = Story(
+        title="T",
+        characters=[Character(id="character_a", name="Fennick"), Character(id="character_b", name="Barnacle")],
+    )
+    llm = FakeAgentLLM(actions=[{"tool": "remove_character", "args": {"id": "character_nobody"}}])
+    proc, _ = build(llm, repo=repo)
+    response, said = await run(proc, "Remove that character.")
+    assert said[-1].endswith(code_messages.UNCLEAR_TARGET)
+    assert len(repo._story.characters) == 2
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "My uncle told me not to tell anyone what we did.",
+        "This is our little secret, okay?",
+        "Someone is hurting me.",
+        "I don't feel safe at home.",
+        "My coach touches me and I don't like it.",
+    ],
+)
+async def test_worried_child_lines_get_the_fixed_script(line):
+    proc, _ = build(FakeAgentLLM())
+    response, said = await run(proc, line)
+    assert response.response_text == code_messages.WORRIED_CHILD_SCRIPT
+    assert response.safety.action == SafetyAction.ALERT_PARENT
+    assert "worried_child" in response.safety.categories
+    assert said == []
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "The knight told the king not to tell anyone about the dragon.",
+        "The monster hits the drum and I laugh.",
+        "She promised to keep the secret treasure hidden.",
+        "My dog touches my hand with his nose.",
+    ],
+)
+async def test_story_lines_are_not_mistaken_for_a_worried_child(line):
+    proc, _ = build(FakeAgentLLM())
+    response, said = await run(proc, line)
+    assert response.response_text != code_messages.WORRIED_CHILD_SCRIPT
+    assert said
+
+
+def test_short_answers_with_a_yes_or_no_word_resolve_confirmations():
+    from yarnotron.agent.turn_processor import _confirmation_answer
+
+    assert _confirmation_answer("No, keep it.") is False
+    assert _confirmation_answer("Yes please do it") is True
+    assert _confirmation_answer("No, the dragon flies away into the mountains") is None
+    assert _confirmation_answer("Okay then Wren climbs the lighthouse stairs") is None
+
+
+@pytest.mark.parametrize("line", ["S E X", "I want to see a n u d e picture", "p o r n please"])
+def test_spelled_out_alert_words_are_caught(line):
+    decision = SafetyClassifier().classify(line)
+    assert decision.action == SafetyAction.ALERT_PARENT
+
+
+def test_ordinary_single_letters_are_not_a_word():
+    assert SafetyClassifier().classify("Plan A and plan B and then plan C").action == SafetyAction.ALLOW

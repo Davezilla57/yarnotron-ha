@@ -64,8 +64,39 @@ class SafetyClassifier:
         "bully",
     }
 
+    # A child telling us something is wrong. First person only, so a story character saying these things is
+    # not caught. The words are the child's cue for the fixed, approved script and a parent alert.
+    _worried_patterns = tuple(
+        re.compile(pattern)
+        for pattern in (
+            r"\b(told|tells|asked|asks|made|makes) me (to |not to |never to )?(not |never )?(tell|say)\b",
+            r"\bour (little )?secret\b(?! (hideout|base|club|clubhouse|cave|treasure|plan|door|garden|place|room))",
+            r"\b(touched|touches|touching) me\b",
+            r"\bsomeone (is |keeps )?(hurting|touching|hitting|scaring) me\b",
+            r"\bmy (uncle|aunt|dad|mom|mum|stepdad|stepmom|coach|teacher|babysitter|neighbou?r|brother|sister|cousin)"
+            r"[^.?!]{0,30}\b(hurts?|hits?|touch\w*|scares?) me\b",
+            r"\bi (am|m|feel) (not safe|unsafe|scared to go home|afraid of (him|her|them|my))\b",
+            r"\bi (dont|do not|don't) feel safe\b",
+        )
+    )
+
     def classify(self, transcript: str) -> SafetyDecision:
-        normalized = transcript.lower()
+        normalized = transcript.lower().replace("\u2019", "'")
+        # Letters said one at a time ("S E X", "a n u d e") are read as the word they spell.
+        for run in re.findall(r"\b(?:[a-z]\s+){2,}[a-z]\b", normalized):
+            spelled = re.sub(r"\s+", "", run)
+            normalized += "".join(f" {term}" for term in self._alert_terms | self._redirect_terms if term in spelled)
+
+        if any(pattern.search(normalized) for pattern in self._worried_patterns):
+            return SafetyDecision(
+                action=SafetyAction.ALERT_PARENT,
+                severity=SafetySeverity.ALERT,
+                categories=["child_safety_review", "worried_child"],
+                child_message=(
+                    "Thank you for telling me. That sounds like something a grown-up should know about."
+                ),
+                parent_note="The child said something that may mean they are unsafe or being asked to keep a secret.",
+            )
 
         if _contains_term(normalized, self._alert_terms):
             categories = ["child_safety_review"]
@@ -309,6 +340,7 @@ Safety categories to consider:
 - weapons instructions, illegal acts, drugs
 - hate, harassment, bullying
 - sharing private personal information
+- the child saying someone is hurting them, touching them, scaring them, or asking them to keep a secret (use alert_parent with the category worried_child)
 - dangerous dares or unsafe real-world behavior
 - generated media requests involving risky content
 

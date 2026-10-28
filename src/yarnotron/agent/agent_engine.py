@@ -55,6 +55,22 @@ _PICTURE_WORDS = re.compile(r"\b(picture|image|draw|drawing|paint|painting|illus
 _EXPLICIT_SCENE = re.compile(
     r"\b(add|make|create|write|put in|start)\b[^.?!]{0,30}\b(scene|chapter)\b", re.IGNORECASE
 )
+# Only the code knows whether something was saved or removed. When the child is asking for a change, a Talker
+# sentence that says it already happened is dropped before it is spoken.
+_EDIT_WORDS = re.compile(
+    r"\b(remove|delete|erase|get rid|take (it |that |him |her |them )?out|cut|undo|change|replace|rename|save|add|"
+    r"put (it |that )?(back|in))\b",
+    re.IGNORECASE,
+)
+_CHANGE_CLAIM = re.compile(
+    r"(\b(is|are|was|were|has been|have been|got|gets)\s+(now\s+)?"
+    r"(gone|removed|deleted|erased|taken out|saved|added|changed|updated|replaced|restored)\b"
+    r"|\bi(\s+have|'ve|\u2019ve|'ll|\s+will)?\s+(just\s+|now\s+|already\s+)?"
+    r"(removed|deleted|erased|took out|taken out|saved|added|changed|updated|replaced|undid|restored|put back)\b"
+    r"|\b(removed|deleted|saved|added) (that|it|this|him|her|them)\b"
+    r"|\bno longer in the story\b)",
+    re.IGNORECASE,
+)
 MAX_ACTIONS = 8
 MAX_ADDS = 3
 
@@ -332,6 +348,28 @@ def _known_ids(story: Story | None) -> set[str]:
     return {c.id for c in story.characters} | {sc.id for sc in story.scenes} | {f.id for f in story.facts}
 
 
+def _resolve_unknown_id(patch: StoryPatch, story: Story | None, transcript: str, known: set[str]) -> StoryPatch:
+    """A Scribe id that is not in the story is replaced by the one thing the child named, if there is exactly one."""
+    current = patch.data.get("id")
+    if current is None or current in known or story is None:
+        return patch
+    operation = patch.operation.value
+    if "character" in operation:
+        options = [(c.id, c.name) for c in story.characters]
+    elif "scene" in operation:
+        options = [(sc.id, sc.title) for sc in story.scenes]
+    else:
+        return patch
+    spoken = transcript.casefold()
+    hits = [
+        item_id for item_id, name in options
+        if name and re.search(rf"\b{re.escape(name.casefold())}\b", spoken)
+    ]
+    if len(hits) != 1:
+        return patch
+    return patch.model_copy(update={"data": {**patch.data, "id": hits[0]}})
+
+
 def _drop_trailing_question(text: str) -> str:
     text = text.strip()
     if not text.endswith("?"):
@@ -465,8 +503,16 @@ class AgentEngine:
                 state["released"] = released + 1
                 start_scribe()
 
+        edit_request = bool(_EDIT_WORDS.search(request.transcript))
+        claims_dropped = 0
+
         def add_sentence(text: str) -> None:
+            nonlocal claims_dropped
             if not text.strip():
+                return
+            if edit_request and _CHANGE_CLAIM.search(text):
+                claims_dropped += 1
+                timer.add_metadata(talker_claims_dropped=claims_dropped)
                 return
             sentences.append(text.strip())
             gates.append(asyncio.create_task(self._gate(request, text.strip())))
@@ -484,7 +530,7 @@ class AgentEngine:
                 # Speak as soon as a sentence has passed its gate. A sentence ending in a question is probably
                 # the last one, which the Scribe's verdict may replace, so it waits for the next sentence or
                 # the end of the stream.
-                hold = 1 if sentences[-1].rstrip().endswith("?") else 0
+                hold = 1 if sentences and sentences[-1].rstrip().endswith("?") else 0
                 await speak_ready(len(sentences) - hold)
                 if veto is not None:
                     break
@@ -502,7 +548,7 @@ class AgentEngine:
                 task.cancel()
             message = veto.child_message or "Let's steer that in a safer direction and keep the story adventurous."
             return TurnOutcome(
-                reply_text=" ".join(([prefix] if prefix else []) + spoken + [message]).strip(),
+                reply_text=" ".join(spoken).strip(),
                 patches=[],
                 apply_patches=[],
                 vetoed=veto,
@@ -542,11 +588,13 @@ class AgentEngine:
                 replacement = code_messages.PICTURE_SAVED
             if scribe.patches and not scribe.undo:
                 known = _known_ids(story)
-                valid = [
-                    p for p in scribe.patches
-                    if "id" not in p.data or p.data["id"] in known
-                ]
-                outcome.refused += [f"{p.operation.value}:unknown_id" for p in scribe.patches if p not in valid]
+                resolved = [_resolve_unknown_id(p, story, request.transcript, known) for p in scribe.patches]
+                valid = [p for p in resolved if "id" not in p.data or p.data["id"] in known]
+                dropped = [p for p in resolved if p not in valid]
+                outcome.refused += [f"{p.operation.value}:unknown_id" for p in dropped]
+                if dropped and not valid:
+                    # The child asked for a change and code cannot tell which thing they mean: ask, never go quiet.
+                    replacement = code_messages.UNCLEAR_TARGET
                 reviewed = self._policy.review(valid, story, request.transcript, TurnIntent.CONTINUE_STORY)
                 patches = reviewed.patches
                 if patches:
@@ -572,7 +620,7 @@ class AgentEngine:
             decision = await self._gate(request, final)
             if decision.action != SafetyAction.ALLOW:
                 outcome.vetoed = decision
-                outcome.reply_text = " ".join(([prefix] if prefix else []) + spoken).strip()
+                outcome.reply_text = " ".join(spoken).strip()
                 outcome.model_text = " ".join(spoken[1:] if prefix else spoken).strip()
                 return outcome
             await on_sentence(final)
@@ -584,13 +632,13 @@ class AgentEngine:
             await speak_ready(len(sentences))
             if self._vetoed_in(gates):
                 outcome.vetoed = self._vetoed_in(gates)
-                outcome.reply_text = " ".join(([prefix] if prefix else []) + spoken).strip()
+                outcome.reply_text = " ".join(spoken).strip()
                 outcome.model_text = " ".join(spoken[1:] if prefix else spoken).strip()
                 return outcome
 
         outcome.patches = patches
         outcome.apply_patches = [p for p in patches if not p.child_confirmation_required]
-        outcome.reply_text = " ".join(([prefix] if prefix else []) + spoken).strip()
+        outcome.reply_text = " ".join(spoken).strip()
         outcome.model_text = " ".join(spoken[1:] if prefix else spoken).strip()
         return outcome
 

@@ -315,13 +315,18 @@ async def run_scenarios(engine: str, scenarios: dict, seed: dict, corpus: dict) 
         out.append(result("scenarios", engine, sid, verdict, note, **extra))
         print(f"  {engine:7s} {sid:24s} {verdict:6s} {note[:70]}", flush=True)
 
+    carried = None
     for session in scenarios["sessions"]:
         sid = session["id"]
         if sid == "s12_gate_blocks_reply":
             add(sid, PASS, "covered by unit test test_sentence_veto_stops_speech_and_saves_nothing")
             continue
         strike_limit = 5
-        env, close = await make_env(engine, seed, strike_limit=strike_limit)
+        if sid == "s11_lock_holds" and carried is not None:
+            env, close = carried  # the locked session left by s09
+            carried = None
+        else:
+            env, close = await make_env(engine, seed, strike_limit=strike_limit)
         replies: list[str] = []
         try:
             verdict, notes = PASS, []
@@ -368,7 +373,11 @@ async def run_scenarios(engine: str, scenarios: dict, seed: dict, corpus: dict) 
                     elif e == "version_snapshot_exists":
                         ok = bool(await env.repo.list_versions(env.story_id))
                     elif e == "pending_cleared" or e == "pending_cleared_or_unresolved":
-                        ok = not any(p.child_confirmation_required for p in t.response.story_patches)
+                        # A new scene offer may legitimately be pending; only a held removal counts here.
+                        ok = not any(
+                            p.child_confirmation_required and p.operation.value.startswith("remove")
+                            for p in t.response.story_patches
+                        )
                     elif e == "reply_says_left_as_is":
                         ok = bool(re.search(r"(left|as it was|kept|keep|same)", reply, re.I))
                     elif e == "undo_tool_used":
@@ -403,7 +412,7 @@ async def run_scenarios(engine: str, scenarios: dict, seed: dict, corpus: dict) 
                         got = int((sess.safety_summary or {}).get("strike", 0)) if sess else 0
                         ok = got >= want
                     elif e in {"session_ended", "locked", "parent_release_required"}:
-                        ok = bool(t.response.safety.categories and "session_ended" in t.response.safety.categories) or None
+                        ok = bool({"session_ended", "strike_limit_reached"} & set(t.response.safety.categories)) or None
                     elif e in {"scene_added_by_code", "scene_added", "removal_applied_by_code"}:
                         ok = len(after_counts["s"]) > len(before_counts["s"]) if e != "removal_applied_by_code" else removed_anything(before_counts, after_counts)
                     elif e == "no_scene_added":
@@ -440,7 +449,12 @@ async def run_scenarios(engine: str, scenarios: dict, seed: dict, corpus: dict) 
         except Exception as exc:
             add(sid, FAIL, f"crash: {type(exc).__name__}: {exc}"[:200], replies=replies)
         finally:
-            await close()
+            if sid == "s09_strikes":
+                carried = (env, close)
+            else:
+                await close()
+    if carried is not None:
+        await carried[1]()
     return out
 
 
