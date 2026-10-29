@@ -132,6 +132,11 @@ class TurnProcessor:
                 if session.ended_at is not None and not parent_released:
                     return await self._session_already_ended(request, timer=timer)
 
+            if session is not None and _is_filler(request.transcript):
+                recent = await self._repository.list_conversation_turns(limit=IDLE_FILLER_LIMIT * 2)
+                if 1 + _filler_run(recent, session.id) >= IDLE_FILLER_LIMIT:
+                    return await self._end_session_for_idle(request, timer=timer)
+
             # The story is loaded before the safety review, not after, so the
             # reviewer can tell who is in it. A bare sentence gets misread: see
             # build_story_safety_context. The lookup is ~3 ms against a ~900 ms
@@ -988,6 +993,27 @@ class TurnProcessor:
             timer=timer,
         )
 
+    async def _end_session_for_idle(self, request: AgentTurnRequest, *, timer: LatencyTimer) -> AgentTurnResponse:
+        """The same filler line, turn after turn: nobody is talking. Pause instead of answering a loop.
+
+        Uses the ended-session category, so Home Assistant stops listening and a grown-up starts the next session.
+        """
+        timer.add_metadata(session_ended=True, idle_loop=True)
+        response = AgentTurnResponse(
+            intent=TurnIntent.UNKNOWN,
+            response_text="I'll take a little rest now. Ask a grown-up to start again whenever you want more story.",
+            safety=SafetyDecision(
+                action=SafetyAction.BLOCK,
+                severity=SafetySeverity.REVIEW,
+                categories=[_SESSION_ENDED, _IDLE_LOOP],
+                parent_note="The session paused: the same few words were heard several times in a row with nobody speaking.",
+            ),
+        )
+        persisted = await self._persist_turn(request, response, timer=timer)
+        if request.session_id is not None:
+            await self._repository.end_session(request.session_id)
+        return persisted
+
     async def _end_session_for_strikes(
         self,
         request: AgentTurnRequest,
@@ -1482,6 +1508,11 @@ _STOP_ACTIONS = frozenset({SafetyAction.BLOCK, SafetyAction.ALERT_PARENT})
 # refusal, not a finding about anything they said. It is recorded, but it must
 # not raise a parent alert, or every word spoken after a cut-off would.
 _SESSION_ENDED = "session_ended"
+_IDLE_LOOP = "idle_loop"
+# What speech recognition invents out of silence or room noise. One of these is just a child being polite;
+# the same thing three turns running is a microphone hearing the speaker, so the session pauses.
+_FILLER = frozenset({"thank you", "thanks", "thank you very much", "thanks for watching", "thank you for watching", "you", "bye", "bye bye"})
+IDLE_FILLER_LIMIT = 3
 
 
 def _transcript_was_released(events: list[SafetyEvent], request: AgentTurnRequest) -> bool:
@@ -1597,6 +1628,23 @@ def _drop_trailing_question(response_text: str) -> str:
     # No earlier sentence means the whole reply was the question, and the
     # clarifying question replaces it outright.
     return head[: boundary + 1].strip() if boundary != -1 else ""
+
+
+def _is_filler(transcript: str) -> bool:
+    words = "".join(c if c.isalpha() or c == " " else (" " if c == "-" else "") for c in transcript.lower()).split()
+    return not words or " ".join(words) in _FILLER
+
+
+def _filler_run(recent: list[ConversationTurn], session_id: str) -> int:
+    """How many of this session's latest turns (newest first in `recent`) were filler, without a gap."""
+    run = 0
+    for turn in recent:
+        if turn.session_id != session_id:
+            continue
+        if not _is_filler(turn.transcript):
+            break
+        run += 1
+    return run
 
 
 def _leads_with_yes(transcript: str) -> bool:

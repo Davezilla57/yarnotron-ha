@@ -593,3 +593,27 @@ def test_commands_are_not_saved_as_story_wording():
         AgentTurnRequest(transcript="He hits the ball."),
     )
     assert kept.patches[0].data["draft_text"] == "He hits the ball."
+
+
+async def test_the_same_filler_three_times_running_pauses_the_session():
+    proc, repo = build(FakeAgentLLM())
+    session_id = None
+    categories = []
+    for _ in range(3):
+        response, _ = await run(proc, "Thank you.", session_id=session_id)
+        session_id = response.session_id
+        categories.append(set(response.safety.categories))
+    assert "session_ended" not in categories[0] and "session_ended" not in categories[1]
+    assert {"session_ended", "idle_loop"} <= categories[2]
+    session = await repo.get_session(session_id)
+    assert session.ended_at is not None
+
+
+async def test_one_polite_thank_you_between_real_sentences_is_just_a_turn():
+    proc, repo = build(FakeAgentLLM())
+    session_id = None
+    for text in ("Thank you.", "The fox crept into the garden.", "Thank you.", "The moon came up.", "Thank you."):
+        response, _ = await run(proc, text, session_id=session_id)
+        session_id = response.session_id
+        assert "idle_loop" not in response.safety.categories
+    assert (await repo.get_session(session_id)).ended_at is None
