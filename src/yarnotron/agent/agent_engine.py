@@ -71,7 +71,7 @@ _EDIT_WORDS = re.compile(
 )
 # The child wants something taken out of the story. Code, not the model, decides what and asks first.
 _REMOVAL_INTENT = re.compile(
-    r"(?:(?:^|\b(?:please|can|could|you|we|just|then|first|to|and|so|lets?|let's)\W+)(?:(?:just|please|also|go ahead and)\W+)?"
+    r"(?:(?:^|\b(?:please|can|could|you|we|just|then|first|and|so|lets?|let's|want(?: you)? to)\W+)(?:(?:just|please|also|go ahead and)\W+)?"
     r"(?:delete|remove|erase)\b"
     r"|\b(?:get|got) rid of\b"
     r"|\btake (?:it |that |him |her |them )?out\b"
