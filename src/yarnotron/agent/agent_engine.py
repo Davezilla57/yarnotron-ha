@@ -138,6 +138,14 @@ def _compact(value: object) -> str:
 # ---------------------------------------------------------------------------------------------- prompts
 
 
+_QUESTION_REMINDER = "Reminder: two short sentences. The last sentence is one question that starts with What, How, Who, Where or Why."
+# The child is dictating their own story. Anything the Talker adds is an interruption, so it only listens.
+_QUIET_REMINDER = (
+    "Reminder: the child is telling the story in their own words. Reply with one short acknowledgement of at most "
+    "six words, such as 'Mm-hm.' or 'Oh, I like that.' Do not ask a question. Do not add anything to the story."
+)
+
+
 def _asked_recently(questions: list[str] | None) -> str:
     if not questions:
         return ""
@@ -154,6 +162,7 @@ def build_talker_prompt(
     interests: list[ChildInterest],
     spec: AgentSpec | None = None,
     avoid_questions: list[str] | None = None,
+    quiet: bool = False,
 ) -> str:
     """Constitution first and unchanged, so the model server's prompt cache stays warm."""
     spec = spec or load_spec()
@@ -176,7 +185,7 @@ Known interests for this child:
 {_asked_recently(avoid_questions)}
 Child said: {request.transcript}
 
-Reminder: two short sentences. The last sentence is one question that starts with What, How, Who, Where or Why.
+{_QUIET_REMINDER if quiet else _QUESTION_REMINDER}
 """
 
 
@@ -533,6 +542,7 @@ class AgentEngine:
         timer: LatencyTimer,
         allow_scene_offer: bool = True,
         avoid_questions: list[str] | None = None,
+        quiet: bool = False,
     ) -> TurnOutcome:
         removal_turn = bool(_REMOVAL_INTENT.search(request.transcript))
         heard, name_matches = resolve_names(request.transcript, story, loose=removal_turn)
@@ -555,7 +565,7 @@ class AgentEngine:
         try:
             return await self._talk(
                 request, story, memories, interests, on_sentence, prefix, timer, start_scribe, spoken, avoid_questions,
-                removal_turn, name_matches,
+                removal_turn, name_matches, quiet,
             )
         finally:
             task = holder.get("task")
@@ -607,8 +617,9 @@ class AgentEngine:
         avoid_questions: list[str] | None = None,
         removal_turn: bool = False,
         name_matches: list[NameMatch] | None = None,
+        quiet: bool = False,
     ) -> TurnOutcome:
-        prompt = build_talker_prompt(request, story, memories, interests, self._spec, avoid_questions)
+        prompt = build_talker_prompt(request, story, memories, interests, self._spec, avoid_questions, quiet)
         started = time.perf_counter()
         accumulator = SentenceAccumulator()
         sentences: list[str] = []

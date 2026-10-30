@@ -57,6 +57,10 @@ _SLEEP = {
     "pause yarnotron",
     "hold on",
     "wait a second",
+    "bye",
+    "bye bye",
+    "bye yarnotron",
+    "see you later",
 }
 _STOP = {
     "stop",
@@ -65,6 +69,10 @@ _STOP = {
     "quit",
     "exit",
     "goodbye",
+    "stop yarnotron",
+    "stop the story",
+    "stop the session",
+    "end the story",
 }
 
 
@@ -116,6 +124,8 @@ _STATUS = {
 def normalize(text: str) -> str:
     folded = text.casefold().replace("'", "").replace("’", "")
     folded = re.sub(r"[^a-z0-9\s]", " ", folded)
+    # Speech recognition spells the app's name many ways ("Yarnitron", "yarn a tron").
+    folded = re.sub(r"\byarn ?[aeiou]? ?tron\b", "yarnotron", folded)
     return re.sub(r"\s+", " ", folded).strip()
 
 

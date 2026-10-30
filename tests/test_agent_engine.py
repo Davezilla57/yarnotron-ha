@@ -670,3 +670,55 @@ async def test_false_refusal_is_not_spoken_when_the_child_asks_for_an_edit():
     proc, _ = build(llm)
     _, said = await run(proc, "Can you change the title please?")
     assert not any("cannot change" in s for s in said), said
+
+
+async def _session_turns(proc, repo):
+    return await repo.list_conversation_turns(limit=20)
+
+
+async def test_hand_over_gets_a_nod_without_the_model_and_then_a_quiet_reply():
+    from yarnotron.agent import turn_acts
+
+    llm = FakeAgentLLM(talk="Oh, I like that.")
+    proc, repo = build(llm)
+    first, _ = await run(proc, "No, let me tell you about the flag!")
+    assert first.response_text in turn_acts.LISTEN_REPLIES and not llm.talker_prompts, "no model call for a nod"
+    second, _ = await run(proc, "It has fifty white stars on a blue background", session_id=first.session_id)
+    assert "Reply with one short acknowledgement" in llm.talker_prompts[-1]
+    assert "What does Pip" not in second.response_text
+    third, _ = await run(proc, "What happens next?", session_id=first.session_id)
+    assert "Reply with one short acknowledgement" not in llm.talker_prompts[-1], "a question ends listening mode"
+
+
+async def test_unfinished_sentence_is_held_and_joined_to_the_next():
+    from yarnotron.agent import turn_acts
+
+    llm = FakeAgentLLM()
+    proc, repo = build(llm)
+    first, _ = await run(proc, "She climbs back into the rocket and")
+    assert first.response_text in turn_acts.HOLD_REPLIES and not llm.talker_prompts
+    second, _ = await run(proc, "flies off to the next planet.", session_id=first.session_id)
+    assert "She climbs back into the rocket and flies off to the next planet." in llm.talker_prompts[-1]
+
+
+async def test_two_frustrated_turns_get_an_apology_and_an_offer_to_listen():
+    from yarnotron.agent import turn_acts
+
+    proc, _ = build(FakeAgentLLM())
+    first, _ = await run(proc, "Why can't you do anything?")
+    assert first.response_text != turn_acts.REPAIR_LINE
+    second, _ = await run(proc, "It's not your business", session_id=first.session_id)
+    assert second.response_text == turn_acts.REPAIR_LINE
+    assert {n.kind for n in second.tutor_notes} >= {"frustration", "dictation"}
+
+
+async def test_new_story_delete_story_and_calling_dad():
+    from yarnotron.agent import turn_acts
+
+    proc, repo = build(FakeAgentLLM())
+    new, _ = await run(proc, "Can we create a new story?")
+    assert new.response_text == turn_acts.NEW_STORY_LINE and new.updated_story.title == "Untitled Story"
+    gone, _ = await run(proc, "Delete that story.")
+    assert gone.response_text == turn_acts.STORY_DELETE_LINE
+    dad, _ = await run(proc, "Dad, can you help me?")
+    assert dad.response_text == turn_acts.GROWN_UP_LINE

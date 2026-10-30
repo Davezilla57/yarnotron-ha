@@ -1,5 +1,6 @@
 import asyncio
 import contextvars
+from datetime import UTC, datetime
 import logging
 import re
 import time
@@ -10,6 +11,7 @@ from fastapi import Depends
 from pydantic import BaseModel, ValidationError
 
 from yarnotron.agent import code_messages
+from yarnotron.agent import turn_acts as acts
 from yarnotron.agent.agent_engine import AgentEngine
 from yarnotron.agent.editing_policy import StoryEditingPolicy, StoryEditingPolicyResult
 from yarnotron.agent.prompts import build_story_turn_prompt
@@ -156,6 +158,13 @@ class TurnProcessor:
                 if 1 + _filler_run(recent, session.id) >= IDLE_FILLER_LIMIT:
                     return await self._end_session_for_idle(request, timer=timer)
 
+            history = await self._session_history(session)
+            held = _held_fragment(history)
+            if held:
+                # The last turn stopped mid-thought and was answered with a nod; this one finishes it.
+                request = request.model_copy(update={"transcript": f"{held} {request.transcript}".strip()[:1500]})
+                timer.add_metadata(fragment_joined=True)
+
             # The story is loaded before the safety review, not after, so the
             # reviewer can tell who is in it. A bare sentence gets misread: see
             # build_story_safety_context. The lookup is ~3 ms against a ~900 ms
@@ -257,6 +266,10 @@ class TurnProcessor:
                             logger.warning("dropped a confirmed scene offer that could not be applied")
                             continue
                         carried.append(confirmed)
+
+            act = await self._conversation_act(request, session, story, safety, history, timer)
+            if act is not None:
+                return act
 
             if _asks_for_story_list(request.transcript):
                 return await self._list_available_stories(request, safety, intent, timer=timer)
@@ -563,12 +576,14 @@ class TurnProcessor:
         memory_ids = [memory.id for memory in memories]
         prefix = _spoken_prefix(spoken_lead, recap, story_selection)
         # No scene offer if a scene was offered or added in the last few turns of this story.
-        recent = [
+        same_story = [
             turn
             for turn in await self._repository.list_conversation_turns(limit=10)
             if turn.story_id == request.story_id
             and (request.session_id is None or turn.session_id == request.session_id)
-        ][:_SCENE_OFFER_COOLDOWN_TURNS]
+        ]
+        recent = same_story[:_SCENE_OFFER_COOLDOWN_TURNS]
+        quiet = _in_dictation(same_story, request.transcript)
         allow_scene_offer = not any(
             patch.operation.value == "add_scene" for turn in recent for patch in turn.story_patches
         )
@@ -583,6 +598,7 @@ class TurnProcessor:
                 timer=timer,
                 allow_scene_offer=allow_scene_offer,
                 avoid_questions=_recent_questions(recent),
+                quiet=quiet,
             )
         if recap is not None:
             with timer.measure("recap_mark"):
@@ -633,6 +649,9 @@ class TurnProcessor:
         applied: list[StoryPatch] = list(carried)
         media_ids: list[str] = []
         notes = list(outcome.tutor_notes)
+        if quiet:
+            notes.append(TutorNote(kind=acts.DICTATION_NOTE, text="The child is telling the story; replies stay short."))
+            timer.add_metadata(dictation=True)
 
         if outcome.undo and request.story_id is not None:
             with timer.measure("version_lookup"):
@@ -1012,6 +1031,64 @@ class TurnProcessor:
             ),
             timer=timer,
         )
+
+    async def _session_history(self, session: StorySession | None) -> list[ConversationTurn]:
+        """This session's recent turns, newest first. Conversation state is read from these, never held in memory."""
+        if session is None:
+            return []
+        turns = await self._repository.list_conversation_turns(limit=10)
+        return [turn for turn in turns if turn.session_id == session.id]
+
+    async def _conversation_act(
+        self,
+        request: AgentTurnRequest,
+        session: StorySession | None,
+        story: Story | None,
+        safety: SafetyDecision,
+        history: list[ConversationTurn],
+        timer: LatencyTimer,
+    ) -> AgentTurnResponse | None:
+        """Answer what is about the conversation itself (a nod, a repair, a new story) without asking the model."""
+        text = request.transcript
+        number = len(history)
+
+        def reply(line: str, *notes: TutorNote, intent: TurnIntent = TurnIntent.UNKNOWN, updated: Story | None = None):
+            timer.add_metadata(conversation_act=notes[0].kind if notes else "reply")
+            return self._persist_turn(
+                request,
+                AgentTurnResponse(intent=intent, response_text=line, safety=safety, tutor_notes=list(notes), updated_story=updated),
+                timer=timer,
+            )
+
+        if acts.addresses_parent(text):
+            return await reply(acts.GROWN_UP_LINE, TutorNote(kind="parent_address", text="The child spoke to a grown-up."))
+        if acts.asks_delete_story(text):
+            return await reply(acts.STORY_DELETE_LINE, TutorNote(kind="story_delete_declined", text="The child asked to delete a story."))
+        if acts.asks_new_story(text) and request.story_id is not None:
+            fresh = await self._repository.create(CreateStoryRequest(title="Untitled Story", synopsis="A new story."))
+            if request.session_id is not None:
+                await self._repository.attach_session_story(request.session_id, fresh.id)
+            return await reply(acts.NEW_STORY_LINE, TutorNote(kind="new_story", text="Started a new story on request."),
+                               intent=TurnIntent.EDIT_STORY, updated=fresh)
+        if (
+            acts.is_frustrated(text)
+            and history
+            and acts.is_frustrated(history[0].transcript)
+            and history[0].response_text != acts.REPAIR_LINE
+        ):
+            return await reply(
+                acts.REPAIR_LINE,
+                TutorNote(kind=acts.FRUSTRATION_NOTE, text="The child sounded frustrated twice in a row."),
+                TutorNote(kind=acts.DICTATION_NOTE, text="Listening, as the child asked."),
+            )
+        if acts.wants_to_tell(text):
+            return await reply(
+                acts.pick(acts.LISTEN_REPLIES, number),
+                TutorNote(kind=acts.DICTATION_NOTE, text="The child wants to tell the story themselves."),
+            )
+        if acts.is_dangling(text) and _consecutive_holds(history) < 2:
+            return await reply(acts.pick(acts.HOLD_REPLIES, number), TutorNote(kind=acts.HOLD_LINE_NOTE, text="Waiting for the rest of the sentence."))
+        return None
 
     async def _end_session_for_idle(self, request: AgentTurnRequest, *, timer: LatencyTimer) -> AgentTurnResponse:
         """The same filler line, turn after turn: nobody is talking. Pause instead of answering a loop.
@@ -1641,6 +1718,39 @@ def _interest_question(interest_name: str) -> str:
 
 # No earlier sentence means the whole reply was the question, and the clarifying question replaces it outright.
 _drop_trailing_question = drop_trailing_question
+
+
+def _kinds(turn: ConversationTurn) -> set[str]:
+    return {note.kind for note in turn.tutor_notes}
+
+
+def _held_fragment(history: list[ConversationTurn], max_age_seconds: int = 120) -> str | None:
+    """The unfinished sentence from the last turn, if that turn was a nod waiting for the rest."""
+    if not history or acts.HOLD_LINE_NOTE not in _kinds(history[0]):
+        return None
+    age = (datetime.now(UTC) - history[0].created_at).total_seconds()
+    return history[0].transcript if age <= max_age_seconds else None
+
+
+def _consecutive_holds(history: list[ConversationTurn]) -> int:
+    count = 0
+    for turn in history:
+        if acts.HOLD_LINE_NOTE not in _kinds(turn):
+            break
+        count += 1
+    return count
+
+
+def _in_dictation(turns: list[ConversationTurn], transcript: str, limit: int = 5) -> bool:
+    """True while the child is telling the story: replies are a short nod. After five nods it asks something again."""
+    if acts.leaves_dictation(transcript):
+        return False
+    count = 0
+    for turn in turns:
+        if acts.DICTATION_NOTE not in _kinds(turn):
+            break
+        count += 1
+    return 0 < count < limit
 
 
 def _recent_questions(turns: list[ConversationTurn], keep: int = 3) -> list[str]:
