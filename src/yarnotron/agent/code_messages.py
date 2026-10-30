@@ -17,3 +17,11 @@ SAVE_FAILED = "I could not save that just now, but we can keep going with the st
 UNCLEAR_TARGET = "I'm not sure which one you mean. Can you tell me its name again?"
 NOT_HEARD = "I didn't catch that. Can you say it again?"
 IDLE_PAUSE = "I'll take a little rest now. Ask a grown-up to start again whenever you want more story."
+
+
+def which_one(names: list[str]) -> str:
+    """Ask which one, offering the characters by name when there are few enough to say aloud."""
+    if 1 <= len(names) <= 4:
+        listed = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " or " + names[-1]
+        return f"I'm not sure which one you mean. Is it {listed}?"
+    return UNCLEAR_TARGET

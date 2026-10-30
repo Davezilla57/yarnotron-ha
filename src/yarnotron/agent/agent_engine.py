@@ -42,6 +42,7 @@ from yarnotron.services.incremental_json import SentenceAccumulator
 from yarnotron.services.ollama import OllamaClient, OllamaUnavailableError
 from yarnotron.services.pii import redact_contact_details
 from yarnotron.services.sentences import drop_trailing_question, split_sentences
+from yarnotron.agent.name_match import NameMatch, resolve_names
 from yarnotron.services.story_store import StoryRepository
 from yarnotron.agent.safety import SafetyReviewer
 
@@ -64,8 +65,26 @@ _COMMAND_LINE = re.compile(
 # Only the code knows whether something was saved or removed. When the child is asking for a change, a Talker
 # sentence that says it already happened is dropped before it is spoken.
 _EDIT_WORDS = re.compile(
-    r"\b(remove|delete|erase|get rid|take (it |that |him |her |them )?out|cut|undo|change|replace|rename|save|add|"
-    r"put (it |that )?(back|in))\b",
+    r"\b(remov\w*|delet\w*|eras\w*|get rid|got rid|take (it |that |him |her |them )?out|cut|undo|chang\w*|replac\w*|"
+    r"renam\w*|sav\w*|add\w*|put (it |that )?(back|in)|no more|not (a )?part of|not in the story)\b",
+    re.IGNORECASE,
+)
+# The child wants something taken out of the story. Code, not the model, decides what and asks first.
+_REMOVAL_INTENT = re.compile(
+    r"(?:(?:^|\b(?:please|can|could|you|we|just|then|first|to|and|so|lets?|let's)\W+)(?:(?:just|please|also|go ahead and)\W+)?"
+    r"(?:delete|remove|erase)\b"
+    r"|\b(?:get|got) rid of\b"
+    r"|\btake (?:it |that |him |her |them )?out\b"
+    r"|\bcut (?:her|him|it|them|that)\b"
+    r"|\b(?:is|are|be) (?:deleted|removed|erased)\b"
+    r"|\b(?:not|n't) (?:talk about|mention|have|include) (?:her|him|it|them|that|mrs|mr|ms)\b"
+    r"|\bdon'?t want (?:her|him|it|them|that)\b"
+    r"|\bnot (?:a )?part of (?:the|this) story\b|\bnot in the story\b)",
+    re.IGNORECASE,
+)
+# "I cannot delete characters" is false: removing is allowed once the child says yes.
+_FALSE_REFUSAL = re.compile(
+    r"\b(can ?not|can'?t|unable to|not able to|am not allowed to|aren'?t able to)\b[^.?!]{0,40}\b(delet\w*|remov\w*|eras\w*|take out|chang\w*|renam\w*|undo)",
     re.IGNORECASE,
 )
 _CHANGE_CLAIM = re.compile(
@@ -444,6 +463,49 @@ def _interest_question(name: str) -> str:
     return f"Is {name} part of this story, or just something you love?"
 
 
+def _candidate_names(story: Story | None) -> list[str]:
+    if story is None:
+        return []
+    return [c.name for c in story.characters if c.name]
+
+
+def _removal_lead(patches: list[StoryPatch], story: Story | None) -> str:
+    """"Take out Mrs. Strumson?" in the child's story's own words, so a yes cannot mean something else."""
+    names = []
+    for patch in patches:
+        op = patch.operation.value
+        if story is None or not op.startswith("remove_"):
+            continue
+        if "character" in op:
+            names += [c.name for c in story.characters if c.id == patch.data.get("id")]
+        elif "scene" in op:
+            names += [f"the scene {sc.title}" for sc in story.scenes if sc.id == patch.data.get("id")]
+        elif "fact" in op:
+            names.append("that part")
+    if not names:
+        return "You want me to take something out."
+    return "You want me to take out " + " and ".join(names[:2]) + "."
+
+
+def _removal_patches(
+    proposed: list[StoryPatch],
+    story: Story | None,
+    transcript: str,
+    matches: list[NameMatch],
+    outcome: TurnOutcome,
+) -> list[StoryPatch]:
+    """Keep only removals. If the model proposed none but the child named exactly one thing, stage that removal."""
+    removals = [p for p in proposed if p.operation.value.startswith("remove_")]
+    outcome.refused += [f"{p.operation.value}:not_a_removal" for p in proposed if p not in removals]
+    if removals or story is None:
+        return removals
+    named = [m for m in matches]
+    if len(named) != 1:
+        return []
+    op = StoryPatchOperation.REMOVE_CHARACTER if named[0].kind == "character" else StoryPatchOperation.REMOVE_SCENE
+    return [StoryPatch(operation=op, data={"id": named[0].item_id}, rationale="Removal asked for by the child; target matched by name.")]
+
+
 class AgentEngine:
     def __init__(
         self,
@@ -472,6 +534,11 @@ class AgentEngine:
         allow_scene_offer: bool = True,
         avoid_questions: list[str] | None = None,
     ) -> TurnOutcome:
+        removal_turn = bool(_REMOVAL_INTENT.search(request.transcript))
+        heard, name_matches = resolve_names(request.transcript, story, loose=removal_turn)
+        if heard != request.transcript:
+            timer.add_metadata(names_resolved=len(name_matches))
+            request = request.model_copy(update={"transcript": heard})
         # The Scribe starts once the first sentence is on its way to the child (or the Talker has finished),
         # not at the first token: both read the same model server, and a prompt being read for the Scribe
         # delays the first word of the Talker.
@@ -487,7 +554,8 @@ class AgentEngine:
         spoken: list[str] = []
         try:
             return await self._talk(
-                request, story, memories, interests, on_sentence, prefix, timer, start_scribe, spoken, avoid_questions
+                request, story, memories, interests, on_sentence, prefix, timer, start_scribe, spoken, avoid_questions,
+                removal_turn, name_matches,
             )
         finally:
             task = holder.get("task")
@@ -537,6 +605,8 @@ class AgentEngine:
         start_scribe: Callable[[], asyncio.Task[ScribeResult | None]],
         spoken: list[str],
         avoid_questions: list[str] | None = None,
+        removal_turn: bool = False,
+        name_matches: list[NameMatch] | None = None,
     ) -> TurnOutcome:
         prompt = build_talker_prompt(request, story, memories, interests, self._spec, avoid_questions)
         started = time.perf_counter()
@@ -573,7 +643,7 @@ class AgentEngine:
             nonlocal claims_dropped
             if not text.strip():
                 return
-            if edit_request and _CHANGE_CLAIM.search(text):
+            if edit_request and (_CHANGE_CLAIM.search(text) or _FALSE_REFUSAL.search(text)):
                 claims_dropped += 1
                 timer.add_metadata(talker_claims_dropped=claims_dropped)
                 return
@@ -594,6 +664,8 @@ class AgentEngine:
                 # the last one, which the Scribe's verdict may replace, so it waits for the next sentence or
                 # the end of the stream.
                 hold = 1 if sentences and sentences[-1].rstrip().endswith("?") else 0
+                if removal_turn:
+                    hold = len(sentences)  # nothing is said until code knows what is being removed
                 await speak_ready(len(sentences) - hold)
                 if veto is not None:
                     break
@@ -601,7 +673,7 @@ class AgentEngine:
                 break
         if veto is None:
             add_sentence(accumulator.flush())
-            await speak_ready(len(sentences) - 1)
+            await speak_ready(0 if removal_turn else len(sentences) - 1)
 
         scribe = await start_scribe()
         timer.add_metadata(talker_sentences=len(sentences), scribe_ok=scribe is not None)
@@ -617,7 +689,10 @@ class AgentEngine:
                 vetoed=veto,
             )
 
-        return await self._finish(request, story, sentences, gates, scribe, on_sentence, prefix, spoken, speak_ready, state, timer)
+        return await self._finish(
+            request, story, sentences, gates, scribe, on_sentence, prefix, spoken, speak_ready, state, timer,
+            removal_turn, name_matches or [],
+        )
 
     async def _finish(
         self,
@@ -632,6 +707,8 @@ class AgentEngine:
         speak_ready: Callable[[int], Awaitable[None]],
         state: dict[str, int],
         timer: LatencyTimer,
+        removal_turn: bool = False,
+        name_matches: list[NameMatch] | None = None,
     ) -> TurnOutcome:
         outcome = TurnOutcome(reply_text="", patches=[], apply_patches=[], scribe_failed=scribe is None)
         last = sentences[-1] if sentences else ""
@@ -639,8 +716,14 @@ class AgentEngine:
         replacement: str | None = None
         patches: list[StoryPatch] = []
 
+        undo = scribe is not None and scribe.undo
+        proposed = list(scribe.patches) if scribe is not None else []
+        if removal_turn and not undo:
+            # "Delete her" is only ever a removal, and only ever staged by code that can say what it will take out.
+            proposed = _removal_patches(proposed, story, request.transcript, name_matches or [], outcome)
+
         if scribe is not None:
-            outcome.refused = scribe.refused
+            outcome.refused += scribe.refused
             outcome.tutor_notes = list(scribe.tutor_notes)
             if scribe.undo:
                 outcome.undo = True
@@ -649,33 +732,38 @@ class AgentEngine:
                 outcome.picture = True
                 outcome.intent = TurnIntent.CREATE_IMAGE
                 replacement = code_messages.PICTURE_SAVED
-            if scribe.patches and not scribe.undo:
-                known = _known_ids(story)
-                resolved = [_resolve_unknown_id(p, story, request.transcript, known) for p in scribe.patches]
-                valid = [
-                    p for p in resolved
-                    if ("id" not in p.data or p.data["id"] in known) and _removal_target_named(p, story, request.transcript)
-                ]
-                dropped = [p for p in resolved if p not in valid]
-                outcome.refused += [f"{p.operation.value}:unknown_id" for p in dropped]
-                if dropped and not valid:
-                    # The child asked for a change and code cannot tell which thing they mean: ask, never go quiet.
-                    replacement = code_messages.UNCLEAR_TARGET
-                reviewed = self._policy.review(valid, story, request.transcript, TurnIntent.CONTINUE_STORY)
-                patches = reviewed.patches
-                if patches:
-                    outcome.intent = TurnIntent.EDIT_STORY
-                if reviewed.needs_confirmation or scribe.scene_offer:
-                    only_scene_offer = scribe.scene_offer and not reviewed.confirmation_notes
-                    replacement = (
-                        code_messages.SCENE_OFFER_QUESTION if only_scene_offer else code_messages.CONFIRM_QUESTION
-                    )
-            if scribe.interest is not None and not scribe.undo:
-                name, ambiguous = scribe.interest
-                outcome.interest = (name, ambiguous)
-                if ambiguous:
-                    patches = [p.model_copy(update={"child_confirmation_required": True}) for p in patches]
-                    replacement = _interest_question(name)
+        if proposed and not undo:
+            known = _known_ids(story)
+            resolved = [_resolve_unknown_id(p, story, request.transcript, known) for p in proposed]
+            valid = [
+                p for p in resolved
+                if ("id" not in p.data or p.data["id"] in known) and _removal_target_named(p, story, request.transcript)
+            ]
+            dropped = [p for p in resolved if p not in valid]
+            outcome.refused += [f"{p.operation.value}:unknown_id" for p in dropped]
+            if dropped and not valid:
+                # The child asked for a change and code cannot tell which thing they mean: ask, never go quiet.
+                replacement = code_messages.which_one(_candidate_names(story))
+            reviewed = self._policy.review(valid, story, request.transcript, TurnIntent.CONTINUE_STORY)
+            patches = reviewed.patches
+            if patches:
+                outcome.intent = TurnIntent.EDIT_STORY
+            scene_offer = scribe is not None and scribe.scene_offer
+            if reviewed.needs_confirmation or scene_offer:
+                only_scene_offer = scene_offer and not reviewed.confirmation_notes
+                replacement = code_messages.SCENE_OFFER_QUESTION if only_scene_offer else code_messages.CONFIRM_QUESTION
+                if removal_turn and not only_scene_offer:
+                    replacement = f"{_removal_lead(patches, story)} {code_messages.CONFIRM_QUESTION}"
+        elif removal_turn and not undo and replacement is None:
+            replacement = code_messages.which_one(_candidate_names(story))
+        if scribe is not None and scribe.interest is not None and not scribe.undo:
+            name, ambiguous = scribe.interest
+            outcome.interest = (name, ambiguous)
+            if ambiguous:
+                patches = [p.model_copy(update={"child_confirmation_required": True}) for p in patches]
+                replacement = _interest_question(name)
+        if removal_turn and replacement is not None and not undo:
+            last, last_already_spoken = "", False  # the model's words are not used on a removal turn
 
         if replacement is not None and not outcome.undo:
             # The last sentence normally has not been spoken yet and gives way to the code's line. If it was

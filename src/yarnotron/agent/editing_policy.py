@@ -159,10 +159,12 @@ class StoryEditingPolicy:
                 "Destructive edits need child confirmation before they are applied.",
             )
 
-        if patch.operation in UPDATE_OPERATIONS and not explicit_edit and not _is_duplicate_merge(patch):
+        # The child is only asked about the things that are hard to take back: removals (above), renames, and
+        # clearing existing wording (below). Adding to or adjusting something does not need a "should I?".
+        if _is_rename(patch, story):
             return _require_confirmation(
                 patch,
-                "The edit changes existing story material but was not requested explicitly.",
+                "Renaming something that already has a name needs child confirmation.",
             )
 
         if _clears_existing_story_text(patch, story):
@@ -172,6 +174,27 @@ class StoryEditingPolicy:
             )
 
         return patch, None
+
+
+def _is_rename(patch: StoryPatch, story: Story | None) -> bool:
+    """True when the patch gives an already-named story, character or scene a different name.
+
+    Naming a story that is still untitled, or a character that had no name, is not a rename.
+    """
+    data = patch.data
+    if patch.operation == StoryPatchOperation.UPDATE_TITLE:
+        current = (story.title if story else "") or ""
+        new = str(data.get("title", ""))
+        return bool(current.strip()) and current.strip().casefold() != "untitled story" and _normalized(new) != _normalized(current)
+    if story is None:
+        return False
+    if patch.operation == StoryPatchOperation.UPDATE_CHARACTER and "name" in data:
+        existing = next((c for c in story.characters if c.id == data.get("id")), None)
+        return existing is not None and bool(existing.name) and _normalized(str(data["name"])) != _normalized(existing.name)
+    if patch.operation == StoryPatchOperation.UPDATE_SCENE and "title" in data:
+        existing = next((sc for sc in story.scenes if sc.id == data.get("id")), None)
+        return existing is not None and bool(existing.title) and _normalized(str(data["title"])) != _normalized(existing.title)
+    return False
 
 
 def is_undo_request(transcript: str) -> bool:

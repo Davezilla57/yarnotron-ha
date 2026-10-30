@@ -415,7 +415,7 @@ async def test_unresolvable_target_asks_instead_of_going_quiet():
     llm = FakeAgentLLM(actions=[{"tool": "remove_character", "args": {"id": "character_nobody"}}])
     proc, _ = build(llm, repo=repo)
     response, said = await run(proc, "Remove that character.")
-    assert said[-1].endswith(code_messages.UNCLEAR_TARGET)
+    assert said[-1].endswith(code_messages.which_one(["Fennick", "Barnacle"]))
     assert len(repo._story.characters) == 2
 
 
@@ -483,7 +483,7 @@ async def test_removal_of_something_the_child_did_not_name_is_not_staged():
     proc, _ = build(llm, repo=repo)
     response, said = await run(proc, "Remove the character Fennick, he never showed up.")
     assert response.story_patches == []
-    assert said[-1].endswith(code_messages.UNCLEAR_TARGET)
+    assert said[-1].endswith(code_messages.which_one(["Wren", "Barnacle"]))
     assert len(repo._story.characters) == 2
 
 
@@ -633,3 +633,40 @@ async def test_questions_asked_recently_are_listed_to_the_talker_not_to_repeat()
     prompt = build_talker_prompt(request, None, [], [], avoid_questions=["What does the first star represent?"])
     assert "What does the first star represent?" in prompt and "Do not ask any of them again" in prompt
     assert "Do not ask any of them again" not in build_talker_prompt(request, None, [], [])
+
+
+def _crew_repo():
+    repo = FakeStoryRepository()
+    repo._story = Story(title="T", characters=[Character(id="character_m", name="Mrs. Strumson", role="explorer"),
+                                              Character(id="character_v", name="Valentina")])
+    return repo
+
+
+async def test_garbled_name_on_a_removal_turn_is_matched_and_asked_about_by_name():
+    repo = _crew_repo()
+    llm = FakeAgentLLM(talk="Mrs. Strumson stays in the story. What does she do next?", actions=[])
+    proc, _ = build(llm, repo=repo)
+    response, said = await run(proc, "Can we not talk about Mrs. Drumston anymore?")
+    spoken = " ".join(said)
+    assert "stays in the story" not in spoken, "the model's words are not used on a removal turn"
+    assert said[-1] == f"You want me to take out Mrs. Strumson. {code_messages.CONFIRM_QUESTION}"
+    assert response.story_patches[0].operation.value == "remove_character"
+    assert response.story_patches[0].data["id"] == "character_m"
+    assert len(repo._story.characters) == 2, "nothing is removed until the child says yes"
+
+
+async def test_a_model_update_cannot_stand_in_for_a_removal():
+    repo = _crew_repo()
+    llm = FakeAgentLLM(talk="Okay. What next?", actions=[{"tool": "update_character", "args": {"id": "character_m", "notes": "deleted"}}])
+    proc, _ = build(llm, repo=repo)
+    response, said = await run(proc, "Mrs. Strumson is deleted!")
+    assert [p.operation.value for p in response.story_patches] == ["remove_character"]
+    assert not response.applied_story_patches
+    assert repo._story.characters[0].notes in (None, "", [])
+
+
+async def test_false_refusal_is_not_spoken_when_the_child_asks_for_an_edit():
+    llm = FakeAgentLLM(talk="I cannot change the title. What should we write next?", actions=[])
+    proc, _ = build(llm)
+    _, said = await run(proc, "Can you change the title please?")
+    assert not any("cannot change" in s for s in said), said
