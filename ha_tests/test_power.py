@@ -111,7 +111,7 @@ async def test_status_lists_both_sides_and_is_calm_when_all_is_well(hass, powere
     add_wyoming(hass)
     await powered()
     _, speech = await _say(hass, "Yarnotron status")
-    assert "On Home Assistant:" in speech and "On the Mac:" in speech
+    assert "On Home Assistant:" in speech and "On the host computer:" in speech
     for name in ("Yarnotron voice agent", "Piper", "Ollama", "Yarnotron backend"):
         assert name in speech
     assert "Everything is working." in speech
@@ -138,7 +138,7 @@ async def test_status_explains_what_is_wrong_on_both_sides(hass, supervisor, pow
 async def test_status_works_without_a_supervisor(hass, setup) -> None:
     await setup()
     _, speech = await _say(hass, "yarnotron status")
-    assert "Mac supervisor unknown" in speech
+    assert "supervisor" not in speech and "On the host computer" not in speech
 
 
 async def test_status_distinguishes_a_stopped_supervisor_from_a_sleeping_mac(hass, setup) -> None:
@@ -148,7 +148,7 @@ async def test_status_distinguishes_a_stopped_supervisor_from_a_sleeping_mac(has
     await setup(supervisor_url=f"http://127.0.0.1:{closed_port}")  # nothing listens: refused
     with patch("homeassistant.components.persistent_notification.async_create") as notify:
         _, speech = await _say(hass, "status")
-    assert "On the Mac: Mac supervisor not running" in speech
+    assert "On the host computer: Host supervisor not running" in speech
     assert "supervisor isn't running" in notify.call_args.args[1]
     assert "launchctl kickstart" in notify.call_args.args[1]
 
@@ -159,7 +159,7 @@ async def test_status_works_while_storytime_is_off(hass, powered) -> None:
         "switch", "turn_off", {"entity_id": "switch.yarnotron_storytime"}, blocking=True
     )
     _, speech = await _say(hass, "yarnotron status")
-    assert "On the Mac:" in speech
+    assert "On the host computer:" in speech
 
 
 # ------------------------------------------------------------------ launch
@@ -224,7 +224,7 @@ async def test_launch_wakes_a_sleeping_mac_first(hass, supervisor, powered) -> N
     with patch.object(power_module, "send_magic_packet", AsyncMock()) as wake:
         _, speech = await _say(hass, "launch yarnotron")
     wake.assert_awaited_once_with("aa:bb:cc:dd:ee:ff")
-    assert speech.startswith("I woke the Mac.")
+    assert speech.startswith("I woke the host computer.")
 
 
 async def test_launch_explains_a_mac_that_never_wakes(hass, supervisor, powered) -> None:
@@ -350,7 +350,7 @@ async def test_shutdown_with_the_supervisor_out_of_reach_still_saves(
         _, speech = await _say(hass, "yes shut down")
     assert fake_backend.prepare_calls == 1
     assert "I saved The Brave Fox" in speech
-    assert "can't reach the Mac supervisor" in speech
+    assert "can't reach the host supervisor" in speech
     assert "could not be stopped" in notify.call_args.args[1]
 
 
@@ -363,7 +363,7 @@ async def test_voice_power_can_be_turned_off(hass, supervisor, powered) -> None:
     assert speech == POWER_DISABLED_TEXT
     assert fake.launch_calls == 0 and fake.shutdown_calls == []
     _, speech = await _say(hass, "yarnotron status")  # looking is always allowed
-    assert "On the Mac:" in speech
+    assert "On the host computer:" in speech
 
 
 # -------------------------------------------------- entities and services

@@ -94,7 +94,7 @@ class Report:
 
     def spoken(self) -> str:
         parts = []
-        for side, label in (("home_assistant", "On Home Assistant"), ("mac", "On the Mac")):
+        for side, label in (("home_assistant", "On Home Assistant"), ("mac", "On the host computer")):
             items = self.side(side)
             if items:
                 parts.append(f"{label}: " + ", ".join(c.spoken for c in items) + ".")
@@ -111,7 +111,7 @@ class Report:
     def markdown(self) -> str:
         lines = ["| Component | Where | Status |", "|---|---|---|"]
         for c in self.components:
-            where = "Home Assistant" if c.side == "home_assistant" else "Mac"
+            where = "Home Assistant" if c.side == "home_assistant" else "Host computer"
             lines.append(f"| {c.name} | {where} | {_WORDS[c.state]} |")
         for c in self.components:
             if not c.issue:
@@ -246,7 +246,7 @@ class PowerController:
                         else "The Yarnotron backend rejected Home Assistant's API token.",
                         f"Polling {rt.api.base_url} failed: {error or 'unknown error'}",
                         [
-                            "Say 'launch Yarnotron' to start the Mac side."
+                            "Say 'launch Yarnotron' to start the host side."
                             if not isinstance(error, YarnotronAuthError)
                             else "Update the API token under the integration's Reconfigure option."
                         ],
@@ -331,7 +331,7 @@ class PowerController:
                             "to is not answering.",
                             [
                                 "For Piper, restart the Piper add-on (Settings > Add-ons).",
-                                "For Whisper on the Mac, launch Yarnotron so the supervisor starts it.",
+                                "For Whisper on the host computer, launch Yarnotron so the supervisor starts it.",
                                 "Check the Wyoming integration's host and port.",
                             ],
                         ),
@@ -344,14 +344,8 @@ class PowerController:
     async def _mac_components(self) -> list[Component]:
         client = self.supervisor
         if client is None:
-            return [
-                Component(
-                    "Mac supervisor",
-                    "mac",
-                    UNKNOWN,
-                    "Not configured. Add its address in the integration's options to control the Mac.",
-                )
-            ]
+            # No supervisor is the normal case when the backend runs in a container: nothing to report on that side.
+            return []
         try:
             status = await client.status()
         except SupervisorUnreachableError as err:
@@ -359,17 +353,17 @@ class PowerController:
         except SupervisorAuthError as err:
             return [
                 Component(
-                    "Mac supervisor",
+                    "Host supervisor",
                     "mac",
                     PROBLEM,
                     str(err),
                     Issue(
-                        "The Mac supervisor rejected Home Assistant's token.",
+                        "The Host supervisor rejected Home Assistant's token.",
                         f"{client.base_url} answered 401.",
                         [
                             (
                                 "Make the supervisor_token in the integration options match the "
-                                "token in ~/.yarnotron-supervisor/supervisor.toml on the Mac."
+                                "token in ~/.yarnotron-supervisor/supervisor.toml on the host computer."
                             )
                         ],
                     ),
@@ -378,25 +372,25 @@ class PowerController:
         except SupervisorError as err:
             return [
                 Component(
-                    "Mac supervisor",
+                    "Host supervisor",
                     "mac",
                     PROBLEM,
                     str(err),
                     Issue(
-                        "The Mac supervisor gave an unexpected answer.",
+                        "The Host supervisor gave an unexpected answer.",
                         str(err),
-                        ["Check ~/.yarnotron-supervisor/logs/supervisor.log on the Mac."],
+                        ["Check ~/.yarnotron-supervisor/logs/supervisor.log on the host computer."],
                     ),
                 )
             ]
 
-        out = [Component("Mac supervisor", "mac", OK, f"Answering at {client.base_url}.")]
+        out = [Component("Host supervisor", "mac", OK, f"Answering at {client.base_url}.")]
         for svc in status.get("services", []):
             state = {"up": OK, "down": DOWN, "unresponsive": PROBLEM}.get(svc.get("state"), UNKNOWN)
             issue = None
             if state != OK:
                 issue = Issue(
-                    f"{svc['label']} is {_WORDS[state]} on the Mac.",
+                    f"{svc['label']} is {_WORDS[state]} on the host computer.",
                     f"{svc.get('detail', '')}"
                     + (
                         f"\nProcess: {svc['process']} (pid {svc['pids'][0]})"
@@ -417,27 +411,27 @@ class PowerController:
         client = self.supervisor
         assert client is not None
         if err.kind == "refused":
-            summary = "The Mac is on, but the Yarnotron supervisor isn't running."
+            summary = "The host computer is on, but the Yarnotron supervisor isn't running."
             hints = [
-                "On the Mac run: launchctl kickstart -k gui/$(id -u)/com.yarnotron.supervisor",
+                "On the host computer run: launchctl kickstart -k gui/$(id -u)/com.yarnotron.supervisor",
                 "If that fails, run scripts/install_supervisor_launchd.sh again.",
-                "The LaunchAgent only runs while you're logged in to the Mac.",
+                "The LaunchAgent only runs while you're logged in to the host computer.",
             ]
         elif err.kind == "timeout":
-            summary = "The Mac isn't answering. It's probably asleep, off, or off the network."
+            summary = "The host computer isn't answering. It's probably asleep, off, or off the network."
             hints = [
                 "Wake the Mac, or set its MAC address in the options so I can wake it for you.",
                 "Keep it awake while it's on power: System Settings > Battery > Options.",
             ]
         else:
-            summary = "I can't reach the Mac. It may be asleep or off, or the address may be wrong."
+            summary = "I can't reach the host computer. It may be asleep or off, or the address may be wrong."
             hints = [
                 "Check the supervisor address in the integration options.",
-                "Check the Mac is awake and on the same network as Home Assistant.",
+                "Check the host computer is awake and on the same network as Home Assistant.",
                 "Keep it awake while it's on power: System Settings > Battery > Options.",
             ]
         return Component(
-            "Mac supervisor",
+            "Host supervisor",
             "mac",
             DOWN,
             summary,
@@ -536,7 +530,7 @@ class PowerController:
         ok = bool(job.get("ok")) and report.ok
         spoken = job.get("summary") or "Launch finished."
         if woke:
-            spoken = "I woke the Mac. " + spoken
+            spoken = "I woke the host computer. " + spoken
         if not ok:
             spoken += " The details are in your Home Assistant notifications."
         self._rt.powered_down = False if job.get("ok") else self._rt.powered_down
@@ -636,7 +630,7 @@ class PowerController:
             return PowerResult(
                 "shutdown",
                 True,
-                "I can't reach the Mac, and the backend isn't answering either, "
+                "I can't reach the host computer, and the backend isn't answering either, "
                 "so there is nothing running to shut down.",
                 f"The supervisor at {self.supervisor.base_url} is unreachable ({err.kind}: "
                 f"{err.detail}) and the backend does not answer. Nothing is running.",
@@ -644,7 +638,7 @@ class PowerController:
         story = (report.get("story") or {}).get("title")
         saved = f"I saved {story}, " if story else "I saved your work, "
         spoken = (
-            saved + "but I can't reach the Mac supervisor, so the backend is still running "
+            saved + "but I can't reach the Host supervisor, so the backend is still running "
             "and refusing new stories. The details are in your Home Assistant notifications."
         )
         comp = self._unreachable_component(err)
@@ -699,27 +693,27 @@ class PowerController:
 
     def _not_configured(self, kind: str) -> PowerResult:
         text = (
-            f"I can't {kind} the Mac side because no supervisor is set up. "
+            f"I can't {kind} the host side because no supervisor is set up. "
             "Add its address in the Yarnotron integration options."
         )
         return PowerResult(kind, False, text, text)
 
     def _auth_result(self, kind: str) -> PowerResult:
-        text = f"The Mac supervisor rejected my token, so I couldn't {kind}."
+        text = f"The Host supervisor rejected my token, so I couldn't {kind}."
         md = (
             f"{text}\n\nMake the supervisor_token in the integration options match the token in "
-            "`~/.yarnotron-supervisor/supervisor.toml` on the Mac."
+            "`~/.yarnotron-supervisor/supervisor.toml` on the host computer."
         )
         return PowerResult(kind, False, text + " The details are in your notifications.", md)
 
     def _supervisor_error(self, kind: str, err: Exception) -> PowerResult:
-        text = f"The Mac supervisor stopped answering properly during {kind}."
+        text = f"The Host supervisor stopped answering properly during {kind}."
         return PowerResult(
             kind,
             False,
             text + " The details are in your notifications.",
             f"{text}\n\n```\n{type(err).__name__}: {err}\n```\n"
-            "Check `~/.yarnotron-supervisor/logs/supervisor.log` on the Mac.",
+            "Check `~/.yarnotron-supervisor/logs/supervisor.log` on the host computer.",
         )
 
     def _unreachable_result(

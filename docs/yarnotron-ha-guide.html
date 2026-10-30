@@ -383,7 +383,7 @@ data:
 
 <section id="power">
   <h2>Power control: launch, shut down, status</h2>
-  <p>The backend lives on the MacBook, which may be asleep or have nothing running. A small <strong>supervisor</strong> runs on the Mac all the time (a launchd job, Python standard library only). Home Assistant asks it to check, start and stop Ollama, Whisper and the Yarnotron backend. Setup steps are in <code>docs/mac-power-control.md</code>.</p>
+  <p><strong>Optional.</strong> This section is for a setup where the backend runs directly on a Mac that may sleep. If the backend runs as an always-on container (for example on the Mac Studio hub), leave the supervisor address empty and keep voice launch and shutdown off: the container restarts by itself. Where it applies: the backend lives on a Mac, which may be asleep or have nothing running. A small <strong>supervisor</strong> runs on the Mac all the time (a launchd job, Python standard library only). Home Assistant asks it to check, start and stop Ollama, Whisper and the Yarnotron backend. Setup steps are in <code>docs/mac-power-control.md</code>.</p>
   <div class="scroll"><table>
     <thead><tr><th>Say</th><th>What happens</th></tr></thead>
     <tbody>
@@ -396,11 +396,16 @@ data:
   <p>The spoken answer is one plain sentence naming the cause, for example "Whisper started and then quit straight away (exit code 3)". The full account goes to a Home Assistant notification: what was observed, the last lines of that process's log, and what to try. The same details are in the status service's response and the Mac services sensor. Distinguished causes include: command not found, quit at startup, running but never answering, port held by an unknown process (never killed), supervisor not running versus Mac asleep, wrong token, backend busy, and a process that came back after being stopped.</p>
   <h3>Also available</h3>
   <ul>
-    <li>Buttons <strong>Launch Yarnotron</strong> and <strong>Shut down Yarnotron</strong>, a <strong>Mac services</strong> sensor and a <strong>Mac supervisor</strong> sensor.</li>
+    <li>Buttons <strong>Launch Yarnotron</strong> and <strong>Shut down Yarnotron</strong>, a <strong>Host services</strong> sensor and a <strong>Host supervisor</strong> sensor.</li>
     <li>Services <code>yarnotron.launch</code>, <code>yarnotron.shutdown</code> (with <code>force</code>) and <code>yarnotron.status</code>, which return their result for automations. An event <code>yarnotron_power_finished</code> fires when a launch or shutdown ends.</li>
     <li>Options: supervisor address and token, the Mac's MAC address, and a switch that turns voice launch and shutdown off (status still works), so a child cannot power it down.</li>
   </ul>
   <p><strong>Limits.</strong> A MacBook that sleeps cannot run anything until woken, and Wake-on-LAN on a MacBook over Wi-Fi is unreliable, so keep it awake on power. The launchd agent runs only while you are logged in. The supervisor can stop only processes it can find by their port. Ollama's menu-bar app may restart the server after a stop; the status check reports that rather than hiding it.</p>
+</section>
+
+<section id="end-of-speech">
+  <h2>Letting a child pause mid-sentence</h2>
+  <p>Assist decides a child has finished when it hears about 0.7 seconds of silence. Children pause to think, so sentences get cut off. In the Yarnotron options, pick the voice satellites' <strong>Finished speaking detection</strong> selects and choose <strong>Relaxed</strong> (about 1.25 seconds). Yarnotron sets them when Home Assistant starts. The backend also holds a sentence that stops on a word like "and" or "the", answers with a short nod, and joins it to the next thing the child says.</p>
 </section>
 
 <section id="limits">

@@ -54,19 +54,23 @@
           "keep_listening": "Keep listening after each reply",
           "include_transcripts": "Include what the child said in alerts",
           "voice_power": "Allow launching and shutting down by voice",
-          "supervisor_url": "Mac supervisor address",
-          "supervisor_token": "Mac supervisor token",
-          "mac_address": "Mac's MAC address (to wake it)"
+          "supervisor_url": "Host supervisor address (optional)",
+          "supervisor_token": "Host supervisor token (optional)",
+          "mac_address": "Host's MAC address (to wake it, optional)",
+          "finished_speaking_entities": "Voice satellites to give more time to finish a sentence",
+          "finished_speaking_mode": "How long to wait in silence at the end of a sentence"
         },
         "data_description": {
           "scan_interval": "How often Home Assistant checks the backend for safety events.",
           "idle_minutes": "Minutes of silence before the next chat begins a new session.",
           "keep_listening": "Lets the child reply without saying the wake word again.",
           "include_transcripts": "Off by default. When on, alert attributes carry an excerpt and are stored in Home Assistant's database.",
-          "voice_power": "When off, only the status question works by voice; launch and shut down need the buttons or services.",
-          "supervisor_url": "Where the Yarnotron supervisor runs on the MacBook, like 192.168.1.20:8990. Leave empty to turn Mac control off.",
-          "supervisor_token": "Must match the token in ~/.yarnotron-supervisor/supervisor.toml.",
-          "mac_address": "Optional. Lets 'launch' wake a sleeping Mac with Wake-on-LAN. Unreliable on MacBooks on Wi-Fi."
+          "voice_power": "Needs a host supervisor. When off, only the status question works by voice; launch and shut down need the buttons or services.",
+          "supervisor_url": "Only for a setup where a supervisor starts and stops the backend on a computer, like 192.168.1.20:8990. Leave empty if the backend runs in a container that restarts by itself.",
+          "supervisor_token": "Must match the token in the supervisor's configuration file.",
+          "mac_address": "Optional. Lets 'launch' wake a sleeping host with Wake-on-LAN. Unreliable over Wi-Fi.",
+          "finished_speaking_entities": "Pick each satellite's 'Finished speaking detection' select (for example from a Home Assistant Voice device). Yarnotron sets it when Home Assistant starts.",
+          "finished_speaking_mode": "Relaxed waits about 1.25 seconds, so a child who pauses to think is not cut off. Default is about 0.7 seconds."
         }
       }
     },
@@ -96,7 +100,7 @@
         "name": "Stories"
       },
       "mac_services": {
-        "name": "Mac services",
+        "name": "Host services",
         "state": {
           "all_running": "All running",
           "degraded": "Degraded",
@@ -113,7 +117,7 @@
         "name": "Session locked"
       },
       "mac_supervisor": {
-        "name": "Mac supervisor"
+        "name": "Host supervisor"
       }
     },
     "switch": {
@@ -247,7 +251,7 @@
     },
     "launch": {
       "name": "Launch",
-      "description": "Check the Mac side and start anything that isn't answering.",
+      "description": "Check the host side and start anything that isn't answering.",
       "fields": {
         "wait": {
           "name": "Wait",
@@ -261,7 +265,7 @@
     },
     "shutdown": {
       "name": "Shut down",
-      "description": "Save the current story, then stop the Mac's Yarnotron processes.",
+      "description": "Save the current story, then stop the host's Yarnotron processes.",
       "fields": {
         "force": {
           "name": "Force",
@@ -279,7 +283,7 @@
     },
     "status": {
       "name": "Status",
-      "description": "List Home Assistant and Mac components and whether each is working.",
+      "description": "List Home Assistant and host components and whether each is working.",
       "fields": {
         "config_entry_id": {
           "name": "Entry",
@@ -303,6 +307,14 @@
     },
     "request_failed": {
       "message": "Yarnotron request failed: {error}"
+    }
+  },
+  "selector": {
+    "finished_speaking_mode": {
+      "options": {
+        "relaxed": "Relaxed (about 1.25 seconds)",
+        "default": "Default (about 0.7 seconds)"
+      }
     }
   }
 }

@@ -1,6 +1,6 @@
 # Launch, shut down and check Yarnotron by voice
 
-Yarnotron's brain runs on your MacBook; Home Assistant runs on the Proxmox VM. This adds a small
+**Optional.** This is for a setup where Yarnotron's backend runs directly on a Mac that may sleep. It is **not used** when the backend runs as an always-on container (the Mac Studio deployment): leave the supervisor address empty and voice power off. Home Assistant runs on the Proxmox VM. This adds a small
 **supervisor** on the Mac so Home Assistant can check, start and stop the Mac's processes.
 
 Each step says where you do it: **[Mac]** is Terminal on the MacBook, **[HA]** is the Home Assistant web page.

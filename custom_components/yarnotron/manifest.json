@@ -10,5 +10,5 @@
   "issue_tracker": "https://github.com/Davezilla57/Yarnotron-HA/issues",
   "loggers": ["custom_components.yarnotron"],
   "requirements": [],
-  "version": "0.1.0"
+  "version": "0.2.0"
 }

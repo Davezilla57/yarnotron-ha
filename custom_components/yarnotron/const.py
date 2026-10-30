@@ -20,20 +20,28 @@ CONF_SUPERVISOR_URL: Final = "supervisor_url"
 CONF_SUPERVISOR_TOKEN: Final = "supervisor_token"
 CONF_MAC_ADDRESS: Final = "mac_address"
 CONF_VOICE_POWER: Final = "voice_power"
+CONF_FINISHED_SPEAKING_ENTITIES: Final = "finished_speaking_entities"
+CONF_FINISHED_SPEAKING_MODE: Final = "finished_speaking_mode"
 
 DEFAULT_CHILD_ID: Final = "local_child"
 DEFAULT_SCAN_INTERVAL: Final = 30  # seconds
 DEFAULT_IDLE_MINUTES: Final = 30
 DEFAULT_KEEP_LISTENING: Final = True
 DEFAULT_INCLUDE_TRANSCRIPTS: Final = False
-DEFAULT_VOICE_POWER: Final = True
+# Launching and shutting down by voice needs a host supervisor. The usual setup (the backend in a container on an
+# always-on computer) has none, so it starts off; turn it on only with a supervisor configured.
+DEFAULT_VOICE_POWER: Final = False
+# How long Assist waits in silence before it decides the child has finished. "relaxed" is about 1.25 s against the
+# usual 0.7 s, which stops a child who pauses to think from being cut off mid-sentence.
+DEFAULT_FINISHED_SPEAKING_MODE: Final = "relaxed"
+FINISHED_SPEAKING_MODES: Final = ("relaxed", "default")
 
 # Launch and shutdown can take minutes (a model loading, a story turn finishing).
 # A voice reply waits this long, then hands over to the notification.
 VOICE_POWER_WAIT: Final = 50
 # How long a spoken "shut down" waits for "yes" before it is forgotten.
 SHUTDOWN_CONFIRM_SECONDS: Final = 60
-# Time to let a sleeping Mac wake and the supervisor come up after a magic packet.
+# Time to let a sleeping host computer wake and the supervisor come up after a magic packet.
 WAKE_WAIT_SECONDS: Final = 90
 WAKE_POLL_SECONDS: Final = 5
 LAUNCH_JOB_TIMEOUT: Final = 420
@@ -103,5 +111,5 @@ POWERED_DOWN_TEXT: Final = (
 SHUTDOWN_CANCELLED_TEXT: Final = "Okay, I'll leave Yarnotron running."
 SHUTDOWN_CONFIRM_TEXT: Final = (
     "Shut down Yarnotron? I'll save the story, then turn off the story engine and the "
-    "speech services on the Mac. Say yes, shut down, to confirm."
+    "speech services on the host computer. Say yes, shut down, to confirm."
 )

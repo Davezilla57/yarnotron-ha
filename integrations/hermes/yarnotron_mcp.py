@@ -14,7 +14,7 @@ Environment
   YARNOTRON_URL                  backend, e.g. http://192.168.1.20:8989      (required)
   YARNOTRON_API_TOKEN            backend bearer token, if the backend uses one
   YARNOTRON_CHILD_ID             child to report on (default local_child)
-  YARNOTRON_SUPERVISOR_URL       Mac supervisor, e.g. http://192.168.1.20:8990
+  YARNOTRON_SUPERVISOR_URL       host supervisor, e.g. http://192.168.1.20:8990
   YARNOTRON_SUPERVISOR_TOKEN     its bearer token
   HASS_URL, HASS_TOKEN           Home Assistant; when set, status/launch/shutdown go
                                  through the Yarnotron integration so Home Assistant's
@@ -171,14 +171,14 @@ class Clients:
     def supervisor(self, method: str, path: str, **kw: Any) -> Any:
         if not self.cfg.supervisor_url:
             raise ToolError(
-                "No Mac supervisor is configured (set YARNOTRON_SUPERVISOR_URL), "
+                "No host supervisor is configured (set YARNOTRON_SUPERVISOR_URL), "
                 "and Home Assistant is not configured either."
             )
         return request(
             method,
             self.cfg.supervisor_url + path,
             token=self.cfg.supervisor_token,
-            what="Mac supervisor",
+            what="host supervisor",
             **kw,
         )
 
@@ -265,7 +265,7 @@ def tool_status(c: Clients, args: dict[str, Any]) -> dict[str, Any]:
                         }
                     )
     elif cfg.supervisor_url:
-        sup = attempt("Mac supervisor", lambda: c.supervisor("GET", "/v1/status"))
+        sup = attempt("host supervisor", lambda: c.supervisor("GET", "/v1/status"))
         if sup:
             result["components"] = [
                 {"name": s["label"], "side": "mac", "state": s["state"], "detail": s["detail"]}
@@ -353,7 +353,7 @@ def tool_launch(c: Clients, args: dict[str, Any]) -> dict[str, Any]:
 
 
 def tool_shutdown(c: Clients, args: dict[str, Any]) -> dict[str, Any]:
-    _require_confirmed(args, "shutting down Yarnotron (it saves the story and stops the Mac side)")
+    _require_confirmed(args, "shutting down Yarnotron (it saves the story and stops the host side)")
     force = bool(args.get("force", False))
     if force and not c.cfg.allow_force:
         raise ToolError(
@@ -476,21 +476,21 @@ CONFIRM = {
 
 TOOLS: dict[str, dict[str, Any]] = {
     "status": {
-        "description": "Status of every Yarnotron component on Home Assistant and on the Mac, "
+        "description": "Status of every Yarnotron component on Home Assistant and on the host computer, "
         "plus backend counts. Problems come with an explanation, the observed detail and what to try.",
         "inputSchema": _schema(),
         "fn": tool_status,
         "readOnly": True,
     },
     "launch": {
-        "description": "Check the Mac side and start anything not answering (wakes a sleeping Mac "
+        "description": "Check the host side and start anything not answering (wakes a sleeping host computer "
         "when Home Assistant is configured with its MAC address). Safe to repeat.",
         "inputSchema": _schema({"wait_seconds": {"type": "number", "default": 300}}),
         "fn": tool_launch,
         "readOnly": False,
     },
     "shutdown": {
-        "description": "Save the current story, drain running work, then stop the Mac side. "
+        "description": "Save the current story, drain running work, then stop the host side. "
         "Interrupts any child currently playing. Needs the user's explicit yes.",
         "inputSchema": _schema(
             {

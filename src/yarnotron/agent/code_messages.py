@@ -1,6 +1,6 @@
 """Words that code says instead of the model. Fixed, short, and approved by a parent.
 
-Both worded lines were approved by the parent on 2026-10-25. They must match `spec/agent.yaml` (tests check this).
+Both worded lines were approved by the parent on 2026-10-25. NOT_HEARD, IDLE_PAUSE and `which_one`, and the lines in `turn_acts`, were approved on 2026-10-29. They must match `spec/agent.yaml` (tests check this).
 """
 
 WORRIED_CHILD_SCRIPT = (

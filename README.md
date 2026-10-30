@@ -10,9 +10,9 @@ the story brain with its safety review, strike lock and parent controls.
 
 - `custom_components/yarnotron/` - the integration (copy it, or add the repo to HACS)
 - `blueprints/automation/yarnotron/` - push a notification on a safety alert
-- `Dockerfile`, `docker-compose.yml` - run the backend headless on the AI machine
+- `Dockerfile`, `docker-compose.yml` - run the backend headless on the AI machine (it runs as an always-on container on the Mac Studio hub in the reference deployment)
 - `docs/yarnotron-ha-guide.html` - architecture, code changes, setup and user guide
-- `src/yarnotron/supervisor/`, `supervisor.example.toml` - Mac-side service so Home Assistant can launch, shut down and check the Mac's processes (`docs/mac-power-control.md`)
+- `src/yarnotron/supervisor/`, `supervisor.example.toml` - optional: a host-side service so Home Assistant can launch, shut down and check processes on a Mac that may sleep. Not used when the backend runs as an always-on container (`docs/mac-power-control.md`)
 - `integrations/hermes/` - Hermes parent/operator profile and stdio MCP server for Yarnotron (`docs/yarnotron-for-jeevus.md` describes the whole system for the Jeevus project)
 - `ha_tests/` - integration tests (`pip install -r requirements_test_ha.txt`, then `pytest ha_tests`)
 
@@ -213,7 +213,7 @@ PYTHONPATH=src uv run --extra voice scripts/local_voice_loop.py --story-id story
 
 The loop records from the microphone, uses RMS-based voice activity detection,
 transcribes with `faster-whisper`, sends turns to the backend, and speaks replies
-through a selectable TTS provider. On this Mac, the default `auto` TTS provider
+through a selectable TTS provider. On a Mac, the default `auto` TTS provider
 uses the local macOS `say` binary as the simplest working speaker path. The first
 run downloads the configured Whisper model unless it is already cached locally.
 

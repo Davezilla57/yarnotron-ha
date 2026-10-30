@@ -4,7 +4,7 @@ A Hermes agent profile that *operates* Yarnotron for the grown-ups: status, laun
 alerts. It cannot talk to the child; the child's voice path stays Home Assistant → Yarnotron backend.
 
 ```
- parent ⇄ Hermes (profile "yarnotron") ──MCP stdio──▶ yarnotron_mcp.py ──▶ Home Assistant services ─▶ Mac supervisor ─▶ Ollama · Whisper · backend
+ parent ⇄ Hermes (profile "yarnotron") ──MCP stdio──▶ yarnotron_mcp.py ──▶ Home Assistant services ─▶ host supervisor ─▶ Ollama · Whisper · backend
                                                              └──────────────▶ Yarnotron backend (/v1/status, /v1/safety-events)
  child  ⇄ voice satellite ⇄ Home Assistant Assist ⇄ Yarnotron conversation agent ⇄ backend      (Hermes is not in this path)
 ```
@@ -43,8 +43,8 @@ describes `~/.hermes/skills/` and `skills.external_dirs`. If the profile does no
 | Tool | Reads/changes | Guard |
 |---|---|---|
 | `status` | Reads | Returns problems with explanation, observed detail and what to try |
-| `launch` | Starts anything not answering | Safe to repeat. Wakes a sleeping Mac when Home Assistant has its MAC address |
-| `shutdown` | Saves the story, stops the Mac side | `confirmed=true` required. `force` also needs `YARNOTRON_MCP_ALLOW_FORCE=1` |
+| `launch` | Starts anything not answering | Safe to repeat. Wakes a sleeping host computer when Home Assistant has its MAC address |
+| `shutdown` | Saves the story, stops the host side | `confirmed=true` required. `force` also needs `YARNOTRON_MCP_ALLOW_FORCE=1` |
 | `safety_events` | Reads | No transcript, no parent note |
 | `review_event` | Marks reviewed, recorded as `YARNOTRON_MCP_ACTOR` | `confirmed=true` |
 | `release_event` | Releases held-back content | Off unless `YARNOTRON_MCP_ALLOW_RELEASE=1`; `confirmed=true` |
@@ -60,7 +60,7 @@ anything you would not want done on a model's misjudgement, leave the tool out o
 
 Home Assistant keeps its own record of the child's session and a "powered down" flag. When
 `HASS_URL` is set, launch/shutdown/status go through the `yarnotron.*` services, so the voice agent
-says the right thing afterwards. Without it the server calls the Mac supervisor directly; that
+says the right thing afterwards. Without it the server calls the host supervisor directly; that
 works, but Home Assistant is not told (the result says so), and Wake-on-LAN is unavailable.
 
 ## Weekly digest

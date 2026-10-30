@@ -1,6 +1,8 @@
 # Yarnotron: reference for the Jeevus project
 
-Purpose: describe everything about Yarnotron that matters for making it a component of Jeevus: what it is, what must not change, every interface it offers, how it connects to Home Assistant, and where the open decisions are. Facts were read from the code in this repository (branch `feature/hermes-profile`) unless marked **unverified**.
+Purpose: describe everything about Yarnotron that matters for making it a component of Jeevus: what it is, what must not change, every interface it offers, how it connects to Home Assistant, and where the open decisions are. Facts were read from the code in this repository unless marked **unverified**.
+
+> **Deployment as of 2026-10-29.** The backend runs as a Docker container on the Mac Studio hub (always on, restarts by itself). Whisper (`whisper.cpp` behind a Wyoming bridge) and Kokoro text-to-speech (Wyoming) also run on the Studio. Models are reached through the LiteLLM gateway (`yarn-story`, `yarn-safety`, `yarn-embed`), not Ollama directly. Home Assistant runs on a Proxmox VM. The MacBook Pro is no longer the host. The *Mac supervisor* and *power control* described in sections 9 and 10 are optional and unused in this deployment: leave the supervisor address empty and voice power off (the default).
 
 ---
 
@@ -17,28 +19,30 @@ It started as a local microphone prototype (Mac + faster-whisper + Kokoro). It n
 ## 2. System map
 
 ```
-                         Home Assistant OS (VM on Proxmox / Dell R620)
+                         Home Assistant OS (VM on Proxmox)
  ┌──────────────┐        ┌───────────────────────────────────────────────────────────┐
- │ Voice        │ audio  │ Assist pipeline: wake word → STT (Wyoming Whisper) →       │
- │ satellite    │◀──────▶│   conversation agent "Yarnotron" → TTS (Wyoming Piper)     │
- └──────────────┘        │ custom_components/yarnotron: agent, sensors, buttons,      │
-                         │   services, events, session lock, power control            │
-                         └──────┬───────────────────────┬────────────────────────────┘
-                   text turns   │ HTTP :8989 (bearer)    │ HTTP :8990 (bearer)
-                                ▼                        ▼
- MacBook (M5 Max)   ┌────────────────────┐    ┌──────────────────────┐
-                    │ Yarnotron backend  │    │ Mac supervisor       │  launchd, stdlib only
-                    │ FastAPI + SQLite   │◀───│ check / start / stop │──▶ starts and stops:
-                    └─────────┬──────────┘    └──────────────────────┘     Ollama :11434
-                              │ HTTP                                       Whisper (Wyoming) :10300
-                              ▼                                            backend :8989
-                    Ollama: story model, safety model, embeddings
+ │ Voice        │ audio  │ Assist pipeline: wake word → STT (Wyoming, Studio :10300) →│
+ │ satellite    │◀──────▶│   conversation agent "Yarnotron" → TTS (Wyoming, Studio    │
+ └──────────────┘        │   :10200)                                                  │
+                         │ custom_components/yarnotron: agent, sensors, buttons,      │
+                         │   services, events, session lock                           │
+                         └──────────────────────┬─────────────────────────────────────┘
+                                   text turns   │ HTTP :8989 (bearer)
+                                                ▼
+ Mac Studio hub (always on)   ┌─────────────────────────────┐
+   Docker container           │ Yarnotron backend           │  FastAPI + SQLite in the
+                              │ (agent engine, safety gate) │  `yarnotron-data` volume
+                              └──────────────┬──────────────┘
+                                             │ HTTP, local key (yarn-* aliases only)
+                                             ▼
+   LiteLLM gateway :4000 ──▶ story + safety model (hub, :8081), embeddings (:7997)
 
- Piper (TTS) runs as a Home Assistant add-on. Whisper (STT) runs on the Mac.
+ Whisper (whisper.cpp + Wyoming bridge, :10300) and Kokoro TTS (Wyoming, :10200) run on the Studio.
  Optional: Hermes profile ──MCP──▶ yarnotron_mcp.py ──▶ HA services / backend   (section 10)
+ Optional, not used here: a host supervisor (launchd) that starts and stops the backend on a Mac.
 ```
 
-Hosts and ports (defaults): backend `8989`, supervisor `8990`, Ollama `11434`, Whisper Wyoming `10300`, Home Assistant `8123`.
+Hosts and ports in this deployment: backend `8989`, LiteLLM `4000`, Whisper Wyoming `10300`, Kokoro TTS Wyoming `10200`, Home Assistant `8123`. Code defaults for a direct-on-a-Mac setup: supervisor `8990`, Ollama `11434`.
 
 ## 3. The turn, step by step (backend)
 
@@ -142,7 +146,7 @@ Host and port are uvicorn arguments, not settings. Model calls use `temperature 
 
 **Ollama** (native API): `GET /api/tags`; `POST /api/generate` (JSON format, streaming optional); `POST /api/embed`. Failures raise `OllamaUnavailableError`; malformed JSON is a subclass handled by the safety reviewer. Streaming extracts `response_text` as it is written, so speech starts before patches are finished.
 
-**Speech (Home Assistant path).** The Assist pipeline owns wake word, STT and TTS. STT is Wyoming faster-whisper on the Mac (`10300`); TTS is Wyoming Piper (HA add-on). The backend never sees audio, only text.
+**Speech (Home Assistant path).** The Assist pipeline owns wake word, STT and TTS. STT is Wyoming Whisper on the speech host (`10300`; whisper.cpp on the Studio here); TTS is Wyoming (`10200`; Kokoro on the Studio here, Piper as an HA add-on is the alternative). The backend never sees audio, only text.
 
 **Speech (original local path, still in the repo).** `src/yarnotron/voice`: energy-threshold recorder, faster-whisper `base.en`, wake word by transcribing and regex-matching a phrase (default "interpreter"), TTS via Kokoro → macOS `say` (Piper opt-in), Silero-based barge-in. Launched with `scripts/start_yarnotron.py --voice`. **Known gap:** its `BackendClient` sends no bearer token, so it fails against a backend with `YARNOTRON_API_TOKEN` set.
 
@@ -250,7 +254,7 @@ Stored under `yarnotron.<entry_id>.session`: `session_id, story_id, pinned_story
 
 Launch: wake the Mac by Wake-on-LAN if the supervisor is unreachable and a MAC is set (waits up to 90 s), run the supervisor launch job, then clear a leftover "shutting down" flag on the backend. Shutdown: end the HA session, run the supervisor shutdown job (which asks the backend to drain and save first). If the supervisor is unreachable but the backend answers, it still asks the backend to save and reports that it could not stop it. One operation runs at a time; asking again joins it.
 
-## 10. Mac supervisor (`src/yarnotron/supervisor`)
+## 10. Host supervisor (`src/yarnotron/supervisor`) — optional, unused with the Studio container
 
 Stdlib-only HTTP service, default `0.0.0.0:8990`, run under launchd (`scripts/install_supervisor_launchd.sh`, wrapped in `caffeinate -i`). Config: `~/.yarnotron-supervisor/supervisor.toml`; logs in `<state_dir>/logs/<service>.log`.
 
@@ -308,7 +312,7 @@ When `HASS_URL` + `HASS_TOKEN` are set, status/launch/shutdown go through the `y
 
 **Failure modes worth designing for**
 
-- The Mac sleeps (MacBook): nothing on it answers until woken; Wake-on-LAN over Wi-Fi is unreliable. The launchd agent runs only while the user is logged in.
+- Only if the backend runs on a laptop with the supervisor: the laptop sleeping stops everything until woken; Wake-on-LAN over Wi-Fi is unreliable; the launchd agent runs only while the user is logged in. Not an issue for the always-on Studio container.
 - Ollama's menu-bar app can restart the server after the supervisor stops it (reported as `still_running`).
 - A shutdown that cannot save leaves the backend draining (503 on new turns) until launch/`cancel-shutdown`.
 - Home Assistant restarts: session lock persists; the alert window is 25 events.

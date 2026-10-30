@@ -8,16 +8,20 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.start import async_at_started
 from homeassistant.helpers.typing import ConfigType
 
 from .api import YarnotronApi, normalize_base_url
 from .const import (
     CONF_API_TOKEN,
     CONF_CHILD_ID,
+    CONF_FINISHED_SPEAKING_ENTITIES,
+    CONF_FINISHED_SPEAKING_MODE,
     CONF_IDLE_MINUTES,
     CONF_MAC_ADDRESS,
     CONF_SUPERVISOR_TOKEN,
     CONF_SUPERVISOR_URL,
+    DEFAULT_FINISHED_SPEAKING_MODE,
     DEFAULT_IDLE_MINUTES,
     DOMAIN,
 )
@@ -26,6 +30,7 @@ from .models import YarnotronConfigEntry, YarnotronRuntimeData
 from .power import PowerController
 from .services import async_setup_services
 from .session import SessionManager
+from .vad import async_apply_finished_speaking
 from .supervisor_client import SupervisorClient
 from .supervisor_coordinator import SupervisorCoordinator
 
@@ -92,6 +97,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: YarnotronConfigEntry) ->
         await runtime.supervisor_coordinator.async_refresh()
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    waiting = list(entry.options.get(CONF_FINISHED_SPEAKING_ENTITIES) or [])
+    if waiting:
+        mode = entry.options.get(CONF_FINISHED_SPEAKING_MODE, DEFAULT_FINISHED_SPEAKING_MODE)
+
+        async def _apply(_hass: HomeAssistant) -> None:
+            await async_apply_finished_speaking(hass, waiting, mode)
+
+        # The satellites' selects may not exist yet while Home Assistant is still starting.
+        entry.async_on_unload(async_at_started(hass, _apply))
     return True
 
 

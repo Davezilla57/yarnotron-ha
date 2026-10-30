@@ -16,6 +16,10 @@ from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
     BooleanSelector,
+    EntitySelector,
+    EntitySelectorConfig,
+    SelectSelector,
+    SelectSelectorConfig,
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
@@ -35,6 +39,8 @@ from .api import (
 from .const import (
     CONF_API_TOKEN,
     CONF_CHILD_ID,
+    CONF_FINISHED_SPEAKING_ENTITIES,
+    CONF_FINISHED_SPEAKING_MODE,
     CONF_IDLE_MINUTES,
     CONF_INCLUDE_TRANSCRIPTS,
     CONF_KEEP_LISTENING,
@@ -44,7 +50,9 @@ from .const import (
     CONF_SUPERVISOR_URL,
     CONF_VOICE_POWER,
     DEFAULT_CHILD_ID,
+    DEFAULT_FINISHED_SPEAKING_MODE,
     DEFAULT_IDLE_MINUTES,
+    FINISHED_SPEAKING_MODES,
     DEFAULT_INCLUDE_TRANSCRIPTS,
     DEFAULT_KEEP_LISTENING,
     DEFAULT_SCAN_INTERVAL,
@@ -234,6 +242,20 @@ class YarnotronOptionsFlow(OptionsFlowWithReload):
                     CONF_INCLUDE_TRANSCRIPTS,
                     default=o.get(CONF_INCLUDE_TRANSCRIPTS, DEFAULT_INCLUDE_TRANSCRIPTS),
                 ): BooleanSelector(),
+                vol.Optional(
+                    CONF_FINISHED_SPEAKING_ENTITIES,
+                    description={"suggested_value": o.get(CONF_FINISHED_SPEAKING_ENTITIES)},
+                ): EntitySelector(EntitySelectorConfig(domain="select", multiple=True)),
+                vol.Required(
+                    CONF_FINISHED_SPEAKING_MODE,
+                    default=o.get(CONF_FINISHED_SPEAKING_MODE, DEFAULT_FINISHED_SPEAKING_MODE),
+                ): SelectSelector(
+                    SelectSelectorConfig(
+                        options=list(FINISHED_SPEAKING_MODES),
+                        translation_key="finished_speaking_mode",
+                        mode="dropdown",
+                    )
+                ),
                 vol.Required(
                     CONF_VOICE_POWER, default=o.get(CONF_VOICE_POWER, DEFAULT_VOICE_POWER)
                 ): BooleanSelector(),

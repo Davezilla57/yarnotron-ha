@@ -4,7 +4,7 @@
 
 Build Yarnotron as a local-first voice agent with optional Alexa integration later. Alexa can be useful as a familiar launch surface, but it is not the best primary interface for this project because a rich storytelling companion needs low-latency streaming audio, long sessions, local memory, tool calls, parent controls, and safety review around generated media.
 
-The best first interface is a local microphone/speaker device on the home network, connected to the MacBook Pro or RTX 4080 PC that runs the AI services. A good prototype target is Home Assistant Voice Preview Edition or a Raspberry Pi/ESP32-S3 voice satellite with a USB speaker/mic. The agent core should not depend on the device; devices should just stream audio in and play audio out.
+The best first interface is a local microphone/speaker device on the home network, connected to the always-on Mac Studio hub that runs the AI services (the RTX PC and the MacBook Pro are optional accelerators). A good prototype target is Home Assistant Voice Preview Edition or a Raspberry Pi/ESP32-S3 voice satellite with a USB speaker/mic. The agent core should not depend on the device; devices should just stream audio in and play audio out.
 
 ## Target Experience
 
@@ -23,7 +23,7 @@ The agent should remember stories as editable artifacts, not just chat history. 
 
 ### Best Prototype
 
-Use the MacBook Pro or RTX 4080 PC as the local AI server. Use a small voice satellite for room audio.
+Use the always-on Mac Studio hub as the local AI server; the RTX PC and MacBook Pro can add capacity. Use a small voice satellite for room audio.
 
 Recommended first device:
 
@@ -53,7 +53,7 @@ Treat Alexa as phase two, not phase one. A private Alexa skill can forward recog
 
 ## Local Runtime
 
-Use the RTX 4080 PC as the main development runtime first. It will give the best local latency and headroom for speech, LLM, embeddings, safety classifiers, and image generation. The MacBook Pro should also be able to run a strong local prototype, especially with MLX-compatible models, but the 4080 is the better initial AI server.
+(Early plan; the reference deployment now runs everything on an always-on Mac Studio hub, with the PC and MacBook Pro as optional accelerators.) Use the RTX 4080 PC as the main development runtime first. It will give the best local latency and headroom for speech, LLM, embeddings, safety classifiers, and image generation. The MacBook Pro should also be able to run a strong local prototype, especially with MLX-compatible models, but the 4080 is the better initial AI server.
 
 Target services:
 

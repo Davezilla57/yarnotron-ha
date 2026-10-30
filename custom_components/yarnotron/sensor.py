@@ -130,7 +130,7 @@ class YarnotronSensor(YarnotronEntity, SensorEntity):
 
 
 class MacServicesSensor(MacEntity, SensorEntity):
-    """One word for the Mac side, with every service in the attributes."""
+    """One word for the host side, with every service in the attributes."""
 
     _attr_device_class = SensorDeviceClass.ENUM
 
