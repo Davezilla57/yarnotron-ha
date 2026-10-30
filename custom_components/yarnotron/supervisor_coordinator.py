@@ -1,4 +1,4 @@
-"""Polls the Host supervisor so the Mac's services show up as entities."""
+"""Polls the host supervisor so the Mac's services show up as entities."""
 
 from __future__ import annotations
 

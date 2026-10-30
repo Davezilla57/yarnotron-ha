@@ -187,10 +187,10 @@ Device "Yarnotron" (service type). Unique id `<entry_id>_<key>`.
 | sensor | `last_safety_event` | timestamp of newest non-allow event; attrs `event_id, action, severity, categories, reviewed` |
 | sensor | `pending_images` | count awaiting approval |
 | sensor | `stories` | count (diagnostic) |
-| sensor | `mac_services` | enum `all_running / degraded / stopped / unreachable`; attrs `services{name:state}, problem, error` (needs supervisor) |
+| sensor | `mac_services` (shown as "Host services") | enum `all_running / degraded / stopped / unreachable`; attrs `services{name:state}, problem, error` (needs supervisor) |
 | binary_sensor | `model_server` | connectivity = Ollama reachable; attrs model names, `missing_models` |
 | binary_sensor | `session_locked` | problem = locked; local state, always available |
-| binary_sensor | `mac_supervisor` | connectivity; attrs `problem, error` (needs supervisor) |
+| binary_sensor | `mac_supervisor` (shown as "Host supervisor") | connectivity; attrs `problem, error` (needs supervisor) |
 | switch | `storytime` | restore-state; off → agent refuses to start stories |
 | button | `start_new_session`, `end_session` | |
 | button | `launch`, `shutdown` | needs supervisor; shutdown has no confirmation |

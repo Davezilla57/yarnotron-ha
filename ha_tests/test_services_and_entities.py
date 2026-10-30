@@ -108,3 +108,23 @@ async def test_diagnostics_redact_secrets(hass, hass_client, backend, setup) -> 
     assert data["entry"]["api_token"] == REDACTED
     assert data["entry"]["url"] == REDACTED
     assert "private words" not in str(data)
+
+
+async def test_finished_speaking_select_is_set_to_relaxed_on_setup(hass, setup) -> None:
+    from pytest_homeassistant_custom_component.common import async_mock_service
+
+    entity = "select.voice_finished_speaking_detection"
+    hass.states.async_set(entity, "default", {"options": ["default", "relaxed", "aggressive"]})
+    calls = async_mock_service(hass, "select", "select_option")
+    await setup(finished_speaking_entities=[entity], finished_speaking_mode="relaxed")
+    await hass.async_block_till_done()
+    assert [c.data for c in calls] == [{"entity_id": entity, "option": "relaxed"}]
+
+
+async def test_nothing_is_touched_when_no_satellites_are_chosen(hass, setup) -> None:
+    from pytest_homeassistant_custom_component.common import async_mock_service
+
+    calls = async_mock_service(hass, "select", "select_option")
+    await setup()
+    await hass.async_block_till_done()
+    assert calls == []

@@ -358,7 +358,7 @@ class PowerController:
                     PROBLEM,
                     str(err),
                     Issue(
-                        "The Host supervisor rejected Home Assistant's token.",
+                        "The host supervisor rejected Home Assistant's token.",
                         f"{client.base_url} answered 401.",
                         [
                             (
@@ -377,7 +377,7 @@ class PowerController:
                     PROBLEM,
                     str(err),
                     Issue(
-                        "The Host supervisor gave an unexpected answer.",
+                        "The host supervisor gave an unexpected answer.",
                         str(err),
                         ["Check ~/.yarnotron-supervisor/logs/supervisor.log on the host computer."],
                     ),
@@ -638,7 +638,7 @@ class PowerController:
         story = (report.get("story") or {}).get("title")
         saved = f"I saved {story}, " if story else "I saved your work, "
         spoken = (
-            saved + "but I can't reach the Host supervisor, so the backend is still running "
+            saved + "but I can't reach the host supervisor, so the backend is still running "
             "and refusing new stories. The details are in your Home Assistant notifications."
         )
         comp = self._unreachable_component(err)
@@ -699,7 +699,7 @@ class PowerController:
         return PowerResult(kind, False, text, text)
 
     def _auth_result(self, kind: str) -> PowerResult:
-        text = f"The Host supervisor rejected my token, so I couldn't {kind}."
+        text = f"The host supervisor rejected my token, so I couldn't {kind}."
         md = (
             f"{text}\n\nMake the supervisor_token in the integration options match the token in "
             "`~/.yarnotron-supervisor/supervisor.toml` on the host computer."
@@ -707,7 +707,7 @@ class PowerController:
         return PowerResult(kind, False, text + " The details are in your notifications.", md)
 
     def _supervisor_error(self, kind: str, err: Exception) -> PowerResult:
-        text = f"The Host supervisor stopped answering properly during {kind}."
+        text = f"The host supervisor stopped answering properly during {kind}."
         return PowerResult(
             kind,
             False,

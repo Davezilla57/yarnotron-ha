@@ -48,6 +48,7 @@ def powered(setup, supervisor):
     async def _setup(**options):
         options.setdefault("supervisor_url", url)
         options.setdefault("supervisor_token", SUP_TOKEN)
+        options.setdefault("voice_power", True)  # off by default now; these tests exercise it
         return await setup(**options)
 
     return _setup
@@ -379,18 +380,18 @@ async def test_mac_entities_exist_only_with_a_supervisor(hass, setup, powered) -
 async def test_mac_sensor_and_supervisor_sensor_follow_the_mac(hass, supervisor, powered) -> None:
     fake, _ = supervisor
     entry = await powered()
-    assert hass.states.get("sensor.yarnotron_mac_services").state == "all_running"
-    assert hass.states.get("binary_sensor.yarnotron_mac_supervisor").state == "on"
+    assert hass.states.get("sensor.yarnotron_host_services").state == "all_running"
+    assert hass.states.get("binary_sensor.yarnotron_host_supervisor").state == "on"
 
     fake.states["whisper"] = "down"
     await entry.runtime_data.supervisor_coordinator.async_refresh()
-    state = hass.states.get("sensor.yarnotron_mac_services")
+    state = hass.states.get("sensor.yarnotron_host_services")
     assert state.state == "degraded" and state.attributes["services"]["whisper"] == "down"
 
     fake.drop_requests = 10_000
     await entry.runtime_data.supervisor_coordinator.async_refresh()
-    assert hass.states.get("sensor.yarnotron_mac_services").state == "unreachable"
-    assert hass.states.get("binary_sensor.yarnotron_mac_supervisor").state == "off"
+    assert hass.states.get("sensor.yarnotron_host_services").state == "unreachable"
+    assert hass.states.get("binary_sensor.yarnotron_host_supervisor").state == "off"
 
 
 async def test_launch_button_starts_things(hass, supervisor, powered) -> None:
@@ -505,3 +506,10 @@ async def test_diagnostics_hide_the_supervisor_secrets(hass, supervisor, powered
     entry = await powered(mac_address="aa:bb:cc:dd:ee:ff")
     dump = str(await async_get_config_entry_diagnostics(hass, entry))
     assert SUP_TOKEN not in dump and "aa:bb:cc:dd:ee:ff" not in dump and url not in dump
+
+
+async def test_voice_launch_and_shutdown_are_off_by_default(hass, setup) -> None:
+    await setup()  # no options at all: the usual container setup
+    _, launch = await _say(hass, "launch yarnotron")
+    _, shutdown = await _say(hass, "shut down yarnotron")
+    assert "turned off" in launch and "turned off" in shutdown

@@ -1,4 +1,4 @@
-"""Client for the Host supervisor (see src/yarnotron/supervisor)."""
+"""Client for the host supervisor (see src/yarnotron/supervisor)."""
 
 from __future__ import annotations
 
