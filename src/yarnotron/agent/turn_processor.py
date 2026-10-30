@@ -27,6 +27,8 @@ from yarnotron.models.operations import (
     SafetyEvent,
     StorySession,
 )
+from yarnotron.services.sentences import drop_trailing_question, split_sentences
+from yarnotron.services.transcript_clean import strip_sound_tags
 from yarnotron.models.safety import SafetyAction, SafetyDecision, SafetySeverity
 from yarnotron.models.story import CreateStoryRequest, Story, StoryPatch
 from yarnotron.services.incremental_json import SentenceAccumulator
@@ -117,8 +119,25 @@ class TurnProcessor:
             request = request.model_copy(update={"transcript": pii.text})
             pii_line = PII_NOT_KEPT_LINE
             timer.add_metadata(pii_removed=",".join(pii.kinds))
+        # Background sound that speech recognition wrote down (*thud*, [music]) is not the child talking.
+        heard = strip_sound_tags(request.transcript)
+        sound_only = not heard
+        if heard != request.transcript.strip() and heard:
+            request = request.model_copy(update={"transcript": heard})
+            timer.add_metadata(sound_tags_removed=True)
         lead_token = _PII_LEAD.set(pii_line)
         try:
+            if sound_only:
+                timer.add_metadata(sound_only=True)
+                return await self._persist_turn(
+                    request,
+                    AgentTurnResponse(
+                        intent=TurnIntent.UNKNOWN,
+                        response_text=code_messages.NOT_HEARD,
+                        safety=SafetyDecision(action=SafetyAction.ALLOW, severity=SafetySeverity.NONE),
+                    ),
+                    timer=timer,
+                )
             # Before the safety model call, which is ~900 ms: a session that has
             # already run out of strikes should cost nothing to turn away.
             with timer.measure("session_lookup"):
@@ -563,6 +582,7 @@ class TurnProcessor:
                 prefix=prefix,
                 timer=timer,
                 allow_scene_offer=allow_scene_offer,
+                avoid_questions=_recent_questions(recent),
             )
         if recap is not None:
             with timer.measure("recap_mark"):
@@ -1001,7 +1021,7 @@ class TurnProcessor:
         timer.add_metadata(session_ended=True, idle_loop=True)
         response = AgentTurnResponse(
             intent=TurnIntent.UNKNOWN,
-            response_text="I'll take a little rest now. Ask a grown-up to start again whenever you want more story.",
+            response_text=code_messages.IDLE_PAUSE,
             safety=SafetyDecision(
                 action=SafetyAction.BLOCK,
                 severity=SafetySeverity.REVIEW,
@@ -1619,15 +1639,20 @@ def _interest_question(interest_name: str) -> str:
     return f"Is {interest_name} part of this story, or just something you love?"
 
 
-def _drop_trailing_question(response_text: str) -> str:
-    text = response_text.strip()
-    if not text.endswith("?"):
-        return text
-    head = text[:-1]
-    boundary = max(head.rfind("."), head.rfind("!"), head.rfind("?"))
-    # No earlier sentence means the whole reply was the question, and the
-    # clarifying question replaces it outright.
-    return head[: boundary + 1].strip() if boundary != -1 else ""
+# No earlier sentence means the whole reply was the question, and the clarifying question replaces it outright.
+_drop_trailing_question = drop_trailing_question
+
+
+def _recent_questions(turns: list[ConversationTurn], keep: int = 3) -> list[str]:
+    """The closing question of each of the last few replies, newest first, so the Talker does not ask it again."""
+    questions: list[str] = []
+    for turn in turns:
+        sentences = split_sentences(turn.response_text)
+        if sentences and sentences[-1].endswith("?") and sentences[-1] not in questions:
+            questions.append(sentences[-1])
+        if len(questions) >= keep:
+            break
+    return questions
 
 
 def _is_filler(transcript: str) -> bool:

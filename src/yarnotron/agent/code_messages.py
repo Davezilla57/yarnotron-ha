@@ -15,3 +15,5 @@ UNDO_NOTHING = "I do not see a recent story change to undo yet. What tiny change
 PICTURE_SAVED = "I saved that picture idea for a grown-up to approve, and we can keep writing while it waits."
 SAVE_FAILED = "I could not save that just now, but we can keep going with the story."
 UNCLEAR_TARGET = "I'm not sure which one you mean. Can you tell me its name again?"
+NOT_HEARD = "I didn't catch that. Can you say it again?"
+IDLE_PAUSE = "I'll take a little rest now. Ask a grown-up to start again whenever you want more story."

@@ -16,6 +16,8 @@ Three things make it fiddly:
 
 from __future__ import annotations
 
+from yarnotron.services.sentences import is_abbreviation_dot
+
 _ESCAPES = {
     '"': '"',
     "\\": "\\",
@@ -149,6 +151,8 @@ class SentenceAccumulator:
                 continue
             if index + 1 < self._minimum_chars:
                 continue
+            if is_abbreviation_dot(self._buffer, index):
+                continue  # "Mrs. Strumson" is one name, not the end of a sentence
             # Only split when we can see what follows. A terminator alone is not
             # a sentence end: "3.5" has no space after it, "..." is a run, and
             # "it... here" continues in lower case.

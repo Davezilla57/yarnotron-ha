@@ -41,6 +41,7 @@ from yarnotron.models.story import Story, StoryPatch, StoryPatchOperation
 from yarnotron.services.incremental_json import SentenceAccumulator
 from yarnotron.services.ollama import OllamaClient, OllamaUnavailableError
 from yarnotron.services.pii import redact_contact_details
+from yarnotron.services.sentences import drop_trailing_question, split_sentences
 from yarnotron.services.story_store import StoryRepository
 from yarnotron.agent.safety import SafetyReviewer
 
@@ -118,12 +119,22 @@ def _compact(value: object) -> str:
 # ---------------------------------------------------------------------------------------------- prompts
 
 
+def _asked_recently(questions: list[str] | None) -> str:
+    if not questions:
+        return ""
+    return (
+        "\nYou already asked these questions in the last few turns. Do not ask any of them again, even reworded; "
+        "ask about something different:\n" + _compact(questions) + "\n"
+    )
+
+
 def build_talker_prompt(
     request: AgentTurnRequest,
     story: Story | None,
     memories: list[MemorySearchResult],
     interests: list[ChildInterest],
     spec: AgentSpec | None = None,
+    avoid_questions: list[str] | None = None,
 ) -> str:
     """Constitution first and unchanged, so the model server's prompt cache stays warm."""
     spec = spec or load_spec()
@@ -143,7 +154,7 @@ Relevant prior memory:
 
 Known interests for this child:
 {_compact(interest_context)}
-
+{_asked_recently(avoid_questions)}
 Child said: {request.transcript}
 
 Reminder: two short sentences. The last sentence is one question that starts with What, How, Who, Where or Why.
@@ -368,7 +379,7 @@ def _known_ids(story: Story | None) -> set[str]:
 
 def _without_repeated_lead(line: str, spoken_last: str) -> str:
     """If the Talker already said the opening sentence of the code's line, say only the rest of it."""
-    parts = re.split(r"(?<=[.!?])\s+", line.strip())
+    parts = split_sentences(line)
     norm = lambda text: re.sub(r"[^a-z]", "", text.casefold())  # noqa: E731
     if len(parts) > 1 and norm(parts[0]) == norm(spoken_last):
         return " ".join(parts[1:])
@@ -426,13 +437,7 @@ def _resolve_unknown_id(patch: StoryPatch, story: Story | None, transcript: str,
     return patch.model_copy(update={"data": {**patch.data, "id": hits[0]}})
 
 
-def _drop_trailing_question(text: str) -> str:
-    text = text.strip()
-    if not text.endswith("?"):
-        return text
-    head = text[:-1]
-    boundary = max(head.rfind("."), head.rfind("!"), head.rfind("?"))
-    return head[: boundary + 1].strip() if boundary != -1 else ""
+_drop_trailing_question = drop_trailing_question
 
 
 def _interest_question(name: str) -> str:
@@ -465,6 +470,7 @@ class AgentEngine:
         prefix: str | None,
         timer: LatencyTimer,
         allow_scene_offer: bool = True,
+        avoid_questions: list[str] | None = None,
     ) -> TurnOutcome:
         # The Scribe starts once the first sentence is on its way to the child (or the Talker has finished),
         # not at the first token: both read the same model server, and a prompt being read for the Scribe
@@ -481,7 +487,7 @@ class AgentEngine:
         spoken: list[str] = []
         try:
             return await self._talk(
-                request, story, memories, interests, on_sentence, prefix, timer, start_scribe, spoken
+                request, story, memories, interests, on_sentence, prefix, timer, start_scribe, spoken, avoid_questions
             )
         finally:
             task = holder.get("task")
@@ -530,8 +536,9 @@ class AgentEngine:
         timer: LatencyTimer,
         start_scribe: Callable[[], asyncio.Task[ScribeResult | None]],
         spoken: list[str],
+        avoid_questions: list[str] | None = None,
     ) -> TurnOutcome:
-        prompt = build_talker_prompt(request, story, memories, interests, self._spec)
+        prompt = build_talker_prompt(request, story, memories, interests, self._spec, avoid_questions)
         started = time.perf_counter()
         accumulator = SentenceAccumulator()
         sentences: list[str] = []

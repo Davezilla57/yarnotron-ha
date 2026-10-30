@@ -617,3 +617,19 @@ async def test_one_polite_thank_you_between_real_sentences_is_just_a_turn():
         session_id = response.session_id
         assert "idle_loop" not in response.safety.categories
     assert (await repo.get_session(session_id)).ended_at is None
+
+
+async def test_sound_only_transcript_is_not_treated_as_story():
+    proc, _ = build(FakeAgentLLM())
+    response, said = await run(proc, "*thud*")
+    assert response.response_text == code_messages.NOT_HEARD
+    assert not response.applied_story_patches
+
+
+async def test_questions_asked_recently_are_listed_to_the_talker_not_to_repeat():
+    from yarnotron.agent.agent_engine import build_talker_prompt
+
+    request = AgentTurnRequest(child_id="c", transcript="No.")
+    prompt = build_talker_prompt(request, None, [], [], avoid_questions=["What does the first star represent?"])
+    assert "What does the first star represent?" in prompt and "Do not ask any of them again" in prompt
+    assert "Do not ask any of them again" not in build_talker_prompt(request, None, [], [])
