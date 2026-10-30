@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from yarnotron.models.operations import CreateSessionRequest, EndSessionRequest, StorySession
+from yarnotron.services.session_quality import summarize
 from yarnotron.services.shutdown import reject_while_draining
 from yarnotron.services.story_store import StoryRepository, get_story_repository
 
@@ -28,6 +29,16 @@ async def list_sessions(
     repository: StoryRepository = Depends(get_story_repository),
 ) -> list[StorySession]:
     return await repository.list_sessions()
+
+
+@router.get("/{session_id}/summary")
+async def session_summary(
+    session_id: str,
+    repository: StoryRepository = Depends(get_story_repository),
+) -> dict[str, int]:
+    """Counts that show how smoothly a session went (held sentences, confirmations, repairs). No words."""
+    turns = [t for t in await repository.list_conversation_turns(limit=500) if t.session_id == session_id]
+    return summarize(turns)
 
 
 @router.post("/{session_id}/end", response_model=StorySession)

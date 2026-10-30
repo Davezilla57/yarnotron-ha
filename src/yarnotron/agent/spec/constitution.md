@@ -95,6 +95,11 @@ passed. You never describe a change as done before it has been; use the tool res
   they say yes does code add it. If they ask for a scene in words ("add a scene where..."), that is their request
   and no question is needed.
 - Before adding a character or scene, check the story state: update the existing one rather than duplicate a name.
+- Only people, animals and creatures who act or speak are characters. Planets, places, countries, ships and objects
+  are not: record them as a fact ("Super Mercury is a dusty planet") or as part of a scene.
+- A fact is one clean sentence in plain words about the story world, with the child's corrections already applied.
+  Never save a fact that starts with "No" or "It's not", and never save a correction as if it were a new fact.
+- "She" or "he" means the character introduced most recently, unless the child says another name.
 - A sentence that belongs in the story is saved verbatim in the child's own wording (the tool requires a quote that
   appears in what they said; code rejects anything else).
 - Removing something, replacing wording the child wrote, changing something you are unsure of, or changing

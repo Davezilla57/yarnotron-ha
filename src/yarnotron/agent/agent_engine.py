@@ -98,6 +98,9 @@ _CHANGE_CLAIM = re.compile(
     r"|\bno longer in the story\b)",
     re.IGNORECASE,
 )
+# A fact that is only the child correcting something ("It's not a space station") is not a fact about the world.
+_CORRECTION_FACT = re.compile(r"^\W*(?:no|nope|not|it'?s not|it is not|that'?s not|that is not|it doesn'?t|there'?s no|there is no)\b", re.IGNORECASE)
+_PRONOUN = re.compile(r"\b(she|he|her|his|him|they|them|their)\b", re.IGNORECASE)
 MAX_ACTIONS = 8
 MAX_ADDS = 3
 
@@ -144,6 +147,12 @@ _QUIET_REMINDER = (
     "Reminder: the child is telling the story in their own words. Reply with one short acknowledgement of at most "
     "six words, such as 'Mm-hm.' or 'Oh, I like that.' Do not ask a question. Do not add anything to the story."
 )
+
+
+def _latest_character_hint(name: str | None) -> str:
+    if not name:
+        return ""
+    return f'\nThe character introduced most recently is "{name}". "She" or "he" means them unless another name is said.\n'
 
 
 def _asked_recently(questions: list[str] | None) -> str:
@@ -194,6 +203,7 @@ def build_scribe_prompt(
     story: Story | None,
     interests: list[ChildInterest],
     spec: AgentSpec | None = None,
+    latest_character: str | None = None,
 ) -> str:
     spec = spec or load_spec()
     tool_lines = []
@@ -220,7 +230,7 @@ Current story state (a bounded view):
 {_compact(compile_story_context(story))}
 
 Known interests (do not note these again unless the child says something new): {_compact(known)}
-
+{_latest_character_hint(latest_character)}
 Child said: {request.transcript}
 """
 
@@ -344,6 +354,9 @@ def interpret_actions(
                 _norm(draft) not in transcript_norm or explicit_scene or _COMMAND_LINE.search(request.transcript)
             ):
                 args.pop("draft_text")
+            if name == "add_fact" and _CORRECTION_FACT.search(str(args.get("text", ""))):
+                result.refused.append("add_fact:correction")
+                continue
             if name == "update_title" and (
                 not _norm(str(args.get("title", ""))) or _norm(str(args["title"])) not in transcript_norm
             ):
@@ -472,6 +485,28 @@ def _interest_question(name: str) -> str:
     return f"Is {name} part of this story, or just something you love?"
 
 
+def _retarget_character_updates(
+    proposed: list[StoryPatch], transcript: str, matches: list[NameMatch], latest_id: str | None
+) -> list[StoryPatch]:
+    """An update lands on the character the child's words point at, not whichever one the model guessed.
+
+    A name that was said wins. With no name and a "she/he", it is the character introduced most recently.
+    """
+    named = [m.item_id for m in matches if m.kind == "character"]
+    if len(named) == 1:
+        target = named[0]
+    elif not named and latest_id and _PRONOUN.search(transcript):
+        target = latest_id
+    else:
+        return proposed
+    return [
+        p.model_copy(update={"data": {**p.data, "id": target}})
+        if p.operation == StoryPatchOperation.UPDATE_CHARACTER and p.data.get("id") not in (None, target)
+        else p
+        for p in proposed
+    ]
+
+
 def _candidate_names(story: Story | None) -> list[str]:
     if story is None:
         return []
@@ -543,6 +578,7 @@ class AgentEngine:
         allow_scene_offer: bool = True,
         avoid_questions: list[str] | None = None,
         quiet: bool = False,
+        latest_character_id: str | None = None,
     ) -> TurnOutcome:
         removal_turn = bool(_REMOVAL_INTENT.search(request.transcript))
         heard, name_matches = resolve_names(request.transcript, story, loose=removal_turn)
@@ -553,11 +589,12 @@ class AgentEngine:
         # not at the first token: both read the same model server, and a prompt being read for the Scribe
         # delays the first word of the Talker.
         holder: dict[str, asyncio.Task[ScribeResult | None]] = {}
+        latest_name = next((c.name for c in (story.characters if story else []) if c.id == latest_character_id), None)
 
         def start_scribe() -> asyncio.Task[ScribeResult | None]:
             if "task" not in holder:
                 holder["task"] = asyncio.create_task(
-                    self._scribe(request, story, interests, timer, allow_scene_offer)
+                    self._scribe(request, story, interests, timer, allow_scene_offer, latest_name)
                 )
             return holder["task"]
 
@@ -565,7 +602,7 @@ class AgentEngine:
         try:
             return await self._talk(
                 request, story, memories, interests, on_sentence, prefix, timer, start_scribe, spoken, avoid_questions,
-                removal_turn, name_matches, quiet,
+                removal_turn, name_matches, quiet, latest_character_id,
             )
         finally:
             task = holder.get("task")
@@ -581,10 +618,11 @@ class AgentEngine:
         interests: list[ChildInterest],
         timer: LatencyTimer,
         allow_scene_offer: bool = True,
+        latest_character: str | None = None,
     ) -> ScribeResult | None:
         started = time.perf_counter()
         try:
-            prompt = build_scribe_prompt(request, story, interests, self._spec)
+            prompt = build_scribe_prompt(request, story, interests, self._spec, latest_character)
             raw = await asyncio.wait_for(
                 self._llm.generate_json(prompt, model=request.model, options={"num_predict": 400}, think=False),
                 timeout=self._budget,
@@ -618,6 +656,7 @@ class AgentEngine:
         removal_turn: bool = False,
         name_matches: list[NameMatch] | None = None,
         quiet: bool = False,
+        latest_character_id: str | None = None,
     ) -> TurnOutcome:
         prompt = build_talker_prompt(request, story, memories, interests, self._spec, avoid_questions, quiet)
         started = time.perf_counter()
@@ -702,7 +741,7 @@ class AgentEngine:
 
         return await self._finish(
             request, story, sentences, gates, scribe, on_sentence, prefix, spoken, speak_ready, state, timer,
-            removal_turn, name_matches or [],
+            removal_turn, name_matches or [], latest_character_id,
         )
 
     async def _finish(
@@ -720,6 +759,7 @@ class AgentEngine:
         timer: LatencyTimer,
         removal_turn: bool = False,
         name_matches: list[NameMatch] | None = None,
+        latest_character_id: str | None = None,
     ) -> TurnOutcome:
         outcome = TurnOutcome(reply_text="", patches=[], apply_patches=[], scribe_failed=scribe is None)
         last = sentences[-1] if sentences else ""
@@ -729,6 +769,8 @@ class AgentEngine:
 
         undo = scribe is not None and scribe.undo
         proposed = list(scribe.patches) if scribe is not None else []
+        if not removal_turn and not undo:
+            proposed = _retarget_character_updates(proposed, request.transcript, name_matches or [], latest_character_id)
         if removal_turn and not undo:
             # "Delete her" is only ever a removal, and only ever staged by code that can say what it will take out.
             proposed = _removal_patches(proposed, story, request.transcript, name_matches or [], outcome)

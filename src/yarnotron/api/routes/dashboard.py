@@ -347,6 +347,10 @@ async def dashboard() -> str:
 
 	    async function loadSessions() {
 	      const sessions = await json("/v1/sessions");
+	      const summaries = {};
+	      await Promise.all(sessions.slice(0, 8).map(async session => {
+	        try { summaries[session.id] = await json(`/v1/sessions/${session.id}/summary`); } catch (error) { /* shown without counts */ }
+	      }));
 	      document.querySelector("#sessions").innerHTML = sessions.map(session => {
 	        const actions = session.ended_at ? "" : button("End session", () => endSession(session.id));
         const badges = [
@@ -356,7 +360,8 @@ async def dashboard() -> str:
         const body = JSON.stringify({
           story_id: session.story_id,
           device_id: session.device_id,
-          safety_summary: session.safety_summary
+          safety_summary: session.safety_summary,
+          conversation: summaries[session.id]
         }, null, 2);
         return item(session.id, `${session.child_id} · ${date(session.started_at)} to ${date(session.ended_at)}`, body, actions, badges);
       }).join("") || '<div class="empty">No sessions yet.</div>';

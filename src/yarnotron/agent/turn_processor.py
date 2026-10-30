@@ -599,6 +599,7 @@ class TurnProcessor:
                 allow_scene_offer=allow_scene_offer,
                 avoid_questions=_recent_questions(recent),
                 quiet=quiet,
+                latest_character_id=_latest_character_id(story, same_story),
             )
         if recap is not None:
             with timer.measure("recap_mark"):
@@ -1718,6 +1719,20 @@ def _interest_question(interest_name: str) -> str:
 
 # No earlier sentence means the whole reply was the question, and the clarifying question replaces it outright.
 _drop_trailing_question = drop_trailing_question
+
+
+def _latest_character_id(story: Story | None, turns: list[ConversationTurn], within: int = 2) -> str | None:
+    """The character added in the last couple of turns, so "she" means them. None if nobody was just introduced."""
+    if story is None:
+        return None
+    for turn in turns[:within]:
+        for patch in reversed(turn.applied_story_patches):
+            if patch.operation.value == "add_character":
+                name = str(patch.data.get("name", "")).casefold()
+                for character in reversed(story.characters):
+                    if character.name.casefold() == name:
+                        return character.id
+    return None
 
 
 def _kinds(turn: ConversationTurn) -> set[str]:

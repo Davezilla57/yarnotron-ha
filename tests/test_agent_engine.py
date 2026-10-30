@@ -722,3 +722,39 @@ async def test_new_story_delete_story_and_calling_dad():
     assert gone.response_text == turn_acts.STORY_DELETE_LINE
     dad, _ = await run(proc, "Dad, can you help me?")
     assert dad.response_text == turn_acts.GROWN_UP_LINE
+
+
+async def test_she_means_the_character_just_introduced_not_the_models_guess():
+    repo = _crew_repo()
+    llm = FakeAgentLLM(actions=[{"tool": "add_character", "args": {"name": "Zed", "role": "pilot"}}])
+    proc, _ = build(llm, repo=repo)
+    first, _ = await run(proc, "A pilot called Zed flies the ship.")
+    assert any(c.name == "Zed" for c in repo._story.characters)
+    zed = next(c for c in repo._story.characters if c.name == "Zed")
+    llm.actions = [{"tool": "update_character", "args": {"id": "character_m", "role": "president"}}]  # wrong guess
+    await run(proc, "She is the president too.", session_id=first.session_id)
+    assert next(c for c in repo._story.characters if c.id == zed.id).role == "president"
+    assert next(c for c in repo._story.characters if c.id == "character_m").role == "explorer"
+
+
+async def test_corrections_and_places_guidance():
+    from yarnotron.agent.agent_engine import interpret_actions
+
+    raw = {"actions": [{"tool": "add_fact", "args": {"text": "It's not a space station, it's a nation."}},
+                       {"tool": "add_fact", "args": {"text": "The Space Nation floats in outer space."}}]}
+    result = interpret_actions(raw, AgentTurnRequest(transcript="It's not a space station, it's a nation in outer space."))
+    assert [p.data["text"] for p in result.patches] == ["The Space Nation floats in outer space."]
+    from yarnotron.agent.agent_engine import load_spec
+
+    assert "Planets, places" in load_spec().scribe_rules and "introduced most recently" in load_spec().scribe_rules
+
+
+async def test_session_summary_counts_without_words():
+    from yarnotron.services.session_quality import summarize
+
+    proc, repo = build(FakeAgentLLM())
+    first, _ = await run(proc, "She climbs into the rocket and")
+    await run(proc, "flies away.", session_id=first.session_id)
+    await run(proc, "Thank you.", session_id=first.session_id)
+    counts = summarize([t for t in await repo.list_conversation_turns(limit=50) if t.session_id == first.session_id])
+    assert counts["turns"] == 3 and counts["held_sentences"] == 1 and counts["filler_turns"] == 1
